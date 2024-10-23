@@ -3,7 +3,13 @@ from typing import Any
 from opentelemetry import trace
 
 from arcade.actor.core.common import Actor, ActorComponent, RequestData, Router
-from arcade.core.schema import ToolCallRequest, ToolCallResponse, ToolDefinition
+from arcade.core.schema import (
+    ToolCallRequest,
+    ToolCallResponse,
+    ToolDefinition,
+    ToolStatusRequest,
+    ToolStatusResponse,
+)
 
 
 class CatalogComponent(ActorComponent):
@@ -44,6 +50,27 @@ class CallToolComponent(ActorComponent):
             call_tool_request_data = request.body_json
             call_tool_request = ToolCallRequest.model_validate(call_tool_request_data)
             return await self.actor.call_tool(call_tool_request)
+
+
+class ToolStatusComponent(ActorComponent):
+    def __init__(self, actor: Actor) -> None:
+        self.actor = actor
+
+    def register(self, router: Router) -> None:
+        """
+        Register the tool status check route with the router.
+        """
+        router.add_route("tools/status", self, method="POST")
+
+    async def __call__(self, request: RequestData) -> ToolStatusResponse:
+        """
+        Handle long-polling requests for tool status updates.
+        """
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span("ToolStatusCheck"):
+            call_tool_status_data = request.body_json
+            call_status_request = ToolStatusRequest.model_validate(call_tool_status_data)
+            return await self.actor.tool_status(call_status_request)
 
 
 class HealthCheckComponent(ActorComponent):

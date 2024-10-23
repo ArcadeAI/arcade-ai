@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      // Explicitly allow JSON-Schema to be referenced (needed due to additionalProperties: false)
+      "type": "string",
+      "format": "uri"
+    },
+    "uuid": {
+      "type": "string",
+      "description": "The current UUID of the registered toolkits."
+    }
+  },
+  "required": ["uuid"],
+  "additionalProperties": false
+}

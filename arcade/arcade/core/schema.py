@@ -252,6 +252,13 @@ class ToolCallRequest(BaseModel):
     """The context for the tool invocation."""
 
 
+class ToolStatusRequest(BaseModel):
+    """The request to check for updates for tools."""
+
+    uuid: str
+    """The UUID to compare against the current toolkits UUID"""
+
+
 class ToolCallError(BaseModel):
     """The error that occurred during the tool invocation."""
 
@@ -317,3 +324,10 @@ class ToolCallResponse(BaseModel):
     """Whether the tool invocation was successful."""
     output: ToolCallOutput | None = None
     """The output of the tool invocation."""
+
+
+class ToolStatusResponse(BaseModel):
+    """The response to a status invocation."""
+
+    uuid: str
+    """The current UUID of the registered toolkits."""

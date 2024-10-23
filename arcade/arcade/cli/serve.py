@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+import threading
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -24,6 +25,7 @@ except ImportError:
     )
 
 from arcade.actor.fastapi.actor import FastAPIActor
+from arcade.cli.watcher import ToolkitWatcher
 from arcade.core.toolkit import Toolkit
 
 
@@ -127,6 +129,16 @@ def serve_default_actor(
     for toolkit in toolkits:
         actor.register_toolkit(toolkit)
 
+    shutdown_event = threading.Event()
+
+    toolkit_watcher = ToolkitWatcher(toolkits, actor, shutdown_event)
+
+    def run_polling() -> None:
+        asyncio.run(toolkit_watcher.start())
+
+    polling_thread = threading.Thread(target=run_polling, daemon=True)
+    polling_thread.start()
+
     logger.info("Starting FastAPI server...")
 
     class CustomUvicornServer(uvicorn.Server):
@@ -154,4 +166,6 @@ def serve_default_actor(
     finally:
         if enable_otel:
             otel_handler.shutdown()
+        shutdown_event.set()
+        polling_thread.join(timeout=5)
         logger.debug("Server shutdown complete.")

@@ -3,7 +3,13 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
-from arcade.core.schema import ToolCallRequest, ToolCallResponse, ToolDefinition
+from arcade.core.schema import (
+    ToolCallRequest,
+    ToolCallResponse,
+    ToolDefinition,
+    ToolStatusRequest,
+    ToolStatusResponse,
+)
 
 
 class RequestData(BaseModel):
@@ -53,6 +59,13 @@ class Actor(ABC):
     async def call_tool(self, request: ToolCallRequest) -> ToolCallResponse:
         """
         Send a request to call a tool to the Actor
+        """
+        pass
+
+    @abstractmethod
+    async def tool_status(self, request: ToolStatusRequest) -> ToolStatusResponse:
+        """
+        Send a request to get the last uuid of the toolkits
         """
         pass
 

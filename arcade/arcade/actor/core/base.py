@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import os
 import time
+import uuid
 from datetime import datetime
 from typing import Any, Callable, ClassVar
 
@@ -13,6 +15,7 @@ from arcade.actor.core.components import (
     CallToolComponent,
     CatalogComponent,
     HealthCheckComponent,
+    ToolStatusComponent,
 )
 from arcade.core.catalog import ToolCatalog, Toolkit
 from arcade.core.executor import ToolExecutor
@@ -20,6 +23,8 @@ from arcade.core.schema import (
     ToolCallRequest,
     ToolCallResponse,
     ToolDefinition,
+    ToolStatusRequest,
+    ToolStatusResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +42,7 @@ class BaseActor(Actor):
         CatalogComponent,
         CallToolComponent,
         HealthCheckComponent,
+        ToolStatusComponent,
     )
 
     def __init__(
@@ -47,6 +53,7 @@ class BaseActor(Actor):
         If no secret is provided, the actor will use the ARCADE_ACTOR_SECRET environment variable.
         """
         self.catalog = ToolCatalog()
+        self._update_catalog_uuid()
         self.disable_auth = disable_auth
         if disable_auth:
             logger.warning(
@@ -59,6 +66,9 @@ class BaseActor(Actor):
             self.tool_counter = otel_meter.create_counter(
                 "tool_call", "requests", "Total number of tools called"
             )
+
+    def _update_catalog_uuid(self) -> None:
+        self.uuid = str(uuid.uuid4())
 
     def _set_secret(self, secret: str | None, disable_auth: bool) -> str:
         if disable_auth:
@@ -77,6 +87,10 @@ class BaseActor(Actor):
             "No secret provided for actor. Set the ARCADE_ACTOR_SECRET environment variable."
         )
 
+    def clear_catalog(self) -> None:
+        self.catalog = ToolCatalog()
+        self._update_catalog_uuid()
+
     def get_catalog(self) -> list[ToolDefinition]:
         """
         Get the catalog as a list of ToolDefinitions.
@@ -88,12 +102,14 @@ class BaseActor(Actor):
         Register a tool to the catalog.
         """
         self.catalog.add_tool(tool, toolkit_name)
+        self._update_catalog_uuid()
 
     def register_toolkit(self, toolkit: Toolkit) -> None:
         """
         Register a toolkit to the catalog.
         """
         self.catalog.add_toolkit(toolkit)
+        self._update_catalog_uuid()
 
     async def call_tool(self, tool_request: ToolCallRequest) -> ToolCallResponse:
         """
@@ -168,6 +184,24 @@ class BaseActor(Actor):
             success=not output.error,
             output=output,
         )
+
+    async def tool_status(self, tool_request: ToolStatusRequest) -> ToolStatusResponse:
+        if tool_request.uuid != self.uuid:
+            return ToolStatusResponse(uuid=self.uuid)
+        # If no update, wait for changes
+        try:
+            await self._wait_for_catalog_update(tool_request.uuid)
+            return ToolStatusResponse(uuid=self.uuid)
+        except asyncio.TimeoutError:
+            # If no update after timeout, return current status
+            return ToolStatusResponse(uuid=self.uuid)
+
+    async def _wait_for_catalog_update(self, uuid: str, timeout: float = 30.0) -> None:
+        start_time = asyncio.get_event_loop().time()
+        while self.uuid == uuid:
+            if asyncio.get_event_loop().time() - start_time > timeout:
+                raise asyncio.TimeoutError("Timeout waiting for catalog update")
+            await asyncio.sleep(1)
 
     def health_check(self) -> dict[str, Any]:
         """
