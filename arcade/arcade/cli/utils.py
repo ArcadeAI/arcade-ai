@@ -17,7 +17,7 @@ from typer.core import TyperGroup
 from typer.models import Context
 
 from arcade.client.client import Arcade
-from arcade.client.errors import APITimeoutError, EngineNotHealthyError, EngineOfflineError
+from arcade.client.errors import EngineNotHealthyError, EngineOfflineError
 from arcade.client.schema import AuthResponse
 from arcade.core.catalog import ToolCatalog
 from arcade.core.config_model import Config
@@ -354,12 +354,7 @@ def wait_for_authorization_completion(client: Arcade, tool_authorization: dict |
     if tool_authorization is None:
         return
     auth_response = AuthResponse.model_validate(tool_authorization)
-
-    while auth_response.status != "completed":
-        try:
-            auth_response = client.auth.status(auth_response, wait=60)
-        except APITimeoutError:
-            continue
+    client.auth.wait_for_completion(auth_response)
 
 
 def get_tool_authorization(

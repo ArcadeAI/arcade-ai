@@ -8,12 +8,18 @@ from arcade.client.base import (
     BaseResource,
     SyncArcadeClient,
 )
-from arcade.client.errors import APIStatusError, EngineNotHealthyError, EngineOfflineError
+from arcade.client.errors import (
+    APIStatusError,
+    APITimeoutError,
+    EngineNotHealthyError,
+    EngineOfflineError,
+)
 from arcade.client.schema import (
     AuthProvider,
     AuthProviderType,
     AuthRequest,
     AuthResponse,
+    AuthStatus,
     ExecuteToolResponse,
     HealthCheckResponse,
 )
@@ -65,13 +71,10 @@ class AuthResource(BaseResource[ClientT]):
         self,
         auth_id_or_response: Union[str, AuthResponse],
         scopes: list[str] | None = None,
-        wait: int | None = None,
     ) -> AuthResponse:
         """
         Poll for the status of an authorization
-
         Polls using either the authorization ID or the data returned from the authorize method.
-
         Example:
             auth_response = client.auth.authorize(...)
             auth_status = client.auth.poll_authorization(auth_response)
@@ -82,31 +85,62 @@ class AuthResource(BaseResource[ClientT]):
             scopes = auth_id_or_response.scopes
         else:
             auth_id = auth_id_or_response
-
-        # Calculate the new timeout based on the wait parameter
-        new_timeout = self._client._timeout
-        if wait is not None:
-            if isinstance(self._client._timeout, Timeout):
-                new_timeout = Timeout(
-                    connect=self._client._timeout.connect,
-                    read=(self._client._timeout.read or 0) + wait,
-                    write=self._client._timeout.write,
-                    pool=self._client._timeout.pool,
-                )
-            else:
-                new_timeout = self._client._timeout + wait
-
         data = self._client._execute_request(  # type: ignore[attr-defined]
             "GET",
             f"{self._resource_path}/status",
-            params={
-                "authorizationId": auth_id,
-                "scopes": " ".join(scopes) if scopes else None,
-                "wait": wait,
-            },
-            timeout=new_timeout,
+            params={"authorizationId": auth_id, "scopes": " ".join(scopes) if scopes else None},
         )
         return AuthResponse(**data)
+
+    def wait_for_completion(
+        self,
+        auth_id_or_response: Union[str, AuthResponse],
+        scopes: list[str] | None = None,
+    ) -> AuthResponse:
+        """
+        Wait until the authorization is no longer pending, i.e., it is completed or failed.
+        """
+        WAIT_TIME = 45  # wait time in seconds
+
+        if isinstance(auth_id_or_response, AuthResponse):
+            auth_id = auth_id_or_response.auth_id
+            scopes = auth_id_or_response.scopes
+        else:
+            auth_id = auth_id_or_response
+
+        # Calculate the new timeout based on the wait parameter
+        new_timeout = self._client._timeout
+
+        if isinstance(self._client._timeout, Timeout):
+            new_timeout = Timeout(
+                connect=self._client._timeout.connect,
+                read=(self._client._timeout.read or 0) + WAIT_TIME,
+                write=self._client._timeout.write,
+                pool=self._client._timeout.pool,
+            )
+        else:
+            new_timeout = self._client._timeout + WAIT_TIME
+
+        while True:
+            try:
+                data = self._client._execute_request(  # type: ignore[attr-defined]
+                    "GET",
+                    f"{self._resource_path}/status",
+                    params={
+                        "authorizationId": auth_id,
+                        "scopes": " ".join(scopes) if scopes else None,
+                        "wait": WAIT_TIME,
+                    },
+                    timeout=new_timeout,
+                )
+            except APITimeoutError:
+                continue
+
+            auth_response = AuthResponse(**data)
+            if auth_response.status != AuthStatus.pending:
+                break
+
+        return auth_response
 
 
 class ToolResource(BaseResource[ClientT]):

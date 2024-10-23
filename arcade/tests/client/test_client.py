@@ -24,6 +24,22 @@ AUTH_RESPONSE_DATA = {
     "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
 }
 
+AUTH_RESPONSE_DATA_COMPLETED = {
+    "auth_id": "auth_123",
+    "authorization_url": "https://example.com/auth",
+    "status": "completed",
+    "authorization_id": "auth_123",
+    "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+}
+
+AUTH_RESPONSE_DATA_FAILED = {
+    "auth_id": "auth_123",
+    "authorization_url": "https://example.com/auth",
+    "status": "failed",
+    "authorization_id": "auth_123",
+    "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+}
+
 AUTH_RESPONSE_DATA_NO_SCOPES = {
     "auth_id": "auth_123",
     "authorization_url": "https://example.com/auth",
@@ -168,13 +184,6 @@ def test_arcade_auth_poll_authorization(test_sync_client, mock_response, monkeyp
     """Test Arcade.auth.poll_authorization method."""
     monkeypatch.setattr(Arcade, "_execute_request", lambda *args, **kwargs: AUTH_RESPONSE_DATA)
     auth_response = test_sync_client.auth.status("auth_123")
-    assert auth_response == AuthResponse(**AUTH_RESPONSE_DATA)
-
-
-def test_arcade_auth_long_poll_authorization(test_sync_client, mock_response, monkeypatch):
-    """Test Arcade.auth.poll_authorization method with long polling."""
-    monkeypatch.setattr(Arcade, "_execute_request", lambda *args, **kwargs: AUTH_RESPONSE_DATA)
-    auth_response = test_sync_client.auth.status("auth_123", wait=1)
     assert auth_response == AuthResponse(**AUTH_RESPONSE_DATA)
 
 
@@ -394,3 +403,21 @@ async def test_async_arcade_tool_list_tools(test_async_client, mock_async_respon
     monkeypatch.setattr(AsyncArcade, "_execute_request", mock_execute_request)
     tool_definitions = await test_async_client.tools.list_tools(toolkit="TestToolkit")
     assert tool_definitions == [ToolDefinition(**TOOL_DEFINITION_DATA)]
+
+
+def test_arcade_auth_wait_for_completion_completed(test_sync_client, mock_response, monkeypatch):
+    """Test Arcade.auth.wait_for_completion method."""
+    monkeypatch.setattr(
+        Arcade, "_execute_request", lambda *args, **kwargs: AUTH_RESPONSE_DATA_COMPLETED
+    )
+    auth_response = test_sync_client.auth.wait_for_completion("auth_123")
+    assert auth_response == AuthResponse(**AUTH_RESPONSE_DATA_COMPLETED)
+
+
+def test_arcade_auth_wait_for_completion_failed(test_sync_client, mock_response, monkeypatch):
+    """Test Arcade.auth.wait_for_completion method."""
+    monkeypatch.setattr(
+        Arcade, "_execute_request", lambda *args, **kwargs: AUTH_RESPONSE_DATA_COMPLETED
+    )
+    auth_response = test_sync_client.auth.wait_for_completion("auth_123")
+    assert auth_response == AuthResponse(**AUTH_RESPONSE_DATA_FAILED)
