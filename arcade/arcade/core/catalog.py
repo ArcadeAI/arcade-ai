@@ -141,6 +141,8 @@ class ToolCatalog(BaseModel):
             toolkit.description if toolkit else None,
         )
 
+        print(definition, end="\n\n\n")
+
         fully_qualified_name = definition.get_fully_qualified_name()
 
         if fully_qualified_name in self._tools:
@@ -158,6 +160,8 @@ class ToolCatalog(BaseModel):
             input_model=input_model,
             output_model=output_model,
         )
+
+        print(self._tools[fully_qualified_name])
 
     def add_module(self, module: ModuleType) -> None:
         """
