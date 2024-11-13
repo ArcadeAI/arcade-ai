@@ -36,6 +36,7 @@ jobs:
           cd arcade
           poetry install --no-interaction --all-extras
           VENV_PATH=$(poetry env info --path)
+          echo "VENV_PATH: $VENV_PATH"
           source $VENV_PATH/bin/activate
           cd ..
         shell: bash
@@ -46,4 +47,4 @@ jobs:
         shell: bash
 
       - name: Run script
-        run: poetry run python community_toolkits/create_community_toolkit_docs.py
+        run: python community_toolkits/create_community_toolkit_docs.py
