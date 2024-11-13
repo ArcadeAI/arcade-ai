@@ -32,7 +32,10 @@ jobs:
 
       - name: Install dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: cd arcade && poetry install --no-interaction --all-extras
+        run: |
+          cd arcade
+          poetry install --no-interaction --all-extras
+          cd ..
         shell: bash
 
       - name: List installed packages
