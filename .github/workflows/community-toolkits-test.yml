@@ -23,28 +23,10 @@ jobs:
       - name: Install Poetry
         uses: snok/install-poetry@v1
 
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('arcade/poetry.lock') }}
-
       - name: Install dependencies and activate venv
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: |
           cd arcade
           poetry install --no-interaction --all-extras
-          VENV_PATH=$(poetry env info --path)
-          echo "VENV_PATH: $VENV_PATH"
-          source $VENV_PATH/bin/activate
-          cd ..
+          python community_toolkits/create_community_toolkit_docs.py
         shell: bash
-
-      - name: List installed packages
-        run: |
-          pip list
-        shell: bash
-
-      - name: Run script
-        run: python community_toolkits/create_community_toolkit_docs.py
