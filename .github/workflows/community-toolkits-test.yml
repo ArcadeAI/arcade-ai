@@ -40,7 +40,8 @@ jobs:
 
       - name: List installed packages
         run: |
-          source $VENV
+          VENV_PATH=$(poetry env info --path)
+          source $VENV_PATH/bin/activate
           pip list
         shell: bash
 
