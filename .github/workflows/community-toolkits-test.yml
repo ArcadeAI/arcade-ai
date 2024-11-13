@@ -30,18 +30,18 @@ jobs:
           path: .venv
           key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('arcade/poetry.lock') }}
 
-      - name: Install dependencies
+      - name: Install dependencies and activate venv
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: |
           cd arcade
           poetry install --no-interaction --all-extras
+          VENV_PATH=$(poetry env info --path)
+          source $VENV_PATH/bin/activate
           cd ..
         shell: bash
 
       - name: List installed packages
         run: |
-          VENV_PATH=$(poetry env info --path)
-          source $VENV_PATH/bin/activate
           pip list
         shell: bash
 
