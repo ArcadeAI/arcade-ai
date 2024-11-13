@@ -37,7 +37,7 @@ jobs:
 
       - name: List installed packages
         run: |
-          source $VENV/bin/activate
+          source $VENV
           pip list
         shell: bash
 
