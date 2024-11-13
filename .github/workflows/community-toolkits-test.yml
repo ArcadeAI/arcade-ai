@@ -27,4 +27,4 @@ jobs:
           key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('arcade/poetry.lock') }}
 
       - name: Run your script or action
-        run: python /community_toolkits/create_community_toolkit_docs.py
+        run: python community_toolkits/create_community_toolkit_docs.py
