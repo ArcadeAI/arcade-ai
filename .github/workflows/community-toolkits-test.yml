@@ -28,5 +28,6 @@ jobs:
         run: |
           cd arcade
           poetry install --no-interaction --all-extras
+          cd ..
           python community_toolkits/create_community_toolkit_docs.py
         shell: bash
