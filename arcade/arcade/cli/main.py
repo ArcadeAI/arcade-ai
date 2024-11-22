@@ -499,3 +499,24 @@ def actorup(
         error_message = f"❌ Failed to start Arcade Actor: {escape(str(e))}"
         console.print(error_message, style="bold red")
         typer.Exit(code=1)
+
+
+@cli.command(
+    help="Create docs for a locally installed toolkit package", rich_help_panel="Tool Development"
+)
+def docs(
+    directory: str = typer.Option(
+        os.getcwd(), "--dir", help="The directory of the toolkit package"
+    ),
+) -> None:
+    """
+    Creates a new toolkit with the given name, description, and result type.
+    """
+    from arcade.cli.docs import create_toolkit_docs
+
+    try:
+        create_toolkit_docs(directory)
+        console.print(f"✨ Generated {os.path.join(directory, 'REFERENCE.md')}", style="bold green")
+    except Exception as e:
+        error_message = f"❌ Failed to create docs: {escape(str(e))}"
+        console.print(error_message, style="bold red")

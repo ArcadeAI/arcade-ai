@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "arcade_spotify"
-version = "0.1.0"
+version = "0.1.2"
 description = "Arcade tools for Spotify"
 authors = ["Arcade AI <dev@arcade-ai.com>"]
 
