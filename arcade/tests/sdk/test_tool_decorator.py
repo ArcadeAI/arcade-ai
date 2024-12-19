@@ -40,6 +40,7 @@ def test_tool_decorator_with_all_options():
         desc="Test description",
         requires_auth=OAuth2(
             provider_id="example",
+            id="my_example_provider123",
             scopes=["test_scope", "another.scope"],
         ),
     )
@@ -48,4 +49,6 @@ def test_tool_decorator_with_all_options():
 
     assert test_tool.__tool_name__ == "TestTool"
     assert test_tool.__tool_description__ == "Test description"
+    assert test_tool.__tool_requires_auth__.provider_id == "example"
+    assert test_tool.__tool_requires_auth__.id == "my_example_provider123"
     assert test_tool.__tool_requires_auth__.scopes == ["test_scope", "another.scope"]
