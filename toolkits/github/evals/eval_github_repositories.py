@@ -1,3 +1,12 @@
+from arcade.sdk import ToolCatalog
+from arcade.sdk.eval import (
+    BinaryCritic,
+    EvalRubric,
+    EvalSuite,
+    ExpectedToolCall,
+    tool_eval,
+)
+
 import arcade_github
 from arcade_github.tools.models import SortDirection
 from arcade_github.tools.repositories import (
@@ -6,15 +15,6 @@ from arcade_github.tools.repositories import (
     list_org_repositories,
     list_repository_activities,
     list_review_comments_in_a_repository,
-)
-
-from arcade.sdk import ToolCatalog
-from arcade.sdk.eval import (
-    BinaryCritic,
-    EvalRubric,
-    EvalSuite,
-    ExpectedToolCall,
-    tool_eval,
 )
 
 # Evaluation rubric
