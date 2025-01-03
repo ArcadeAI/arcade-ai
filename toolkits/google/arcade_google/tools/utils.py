@@ -1,3 +1,4 @@
+import logging
 import re
 from base64 import urlsafe_b64decode
 from datetime import datetime, timedelta
@@ -9,7 +10,16 @@ from bs4 import BeautifulSoup
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource, build
 
+from arcade_google.tools.exceptions import GmailToolError
 from arcade_google.tools.models import Day, TimeSlot
+
+## Set up basic configuration for logging to the console with DEBUG level and a specific format.
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
+logger = logging.getLogger(__name__)
 
 
 def parse_datetime(datetime_str: str, time_zone: str) -> datetime:
@@ -72,9 +82,10 @@ class DateRange(Enum):
         return result + comparison_date.strftime("%Y/%m/%d")
 
 
-def parse_email(email_data: dict[str, Any]) -> dict[str, Any]:
+def parse_plain_text_email(email_data: dict[str, Any]) -> dict[str, Any]:
     """
     Parse email data and extract relevant information.
+    Only returns the plain text body.
 
     Args:
         email_data (Dict[str, Any]): Raw email data from Gmail API.
@@ -82,23 +93,84 @@ def parse_email(email_data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Optional[Dict[str, str]]: Parsed email details or None if parsing fails.
     """
-    try:
-        payload = email_data.get("payload", {})
-        headers = {d["name"].lower(): d["value"] for d in payload.get("headers", [])}
+    payload = email_data.get("payload", {})
+    headers = {d["name"].lower(): d["value"] for d in payload.get("headers", [])}
+    logger.debug(f"headers: {headers}")
+    body_data = _get_email_plain_text_body(payload)
+    logger.debug(f"\nBody: {body_data}\n")
 
-        body_data = _get_email_body(payload)
+    email_details = {
+        "id": email_data.get("id", ""),
+        "thread_id": email_data.get("threadId", ""),
+        "label_ids": email_data.get("labelIds", []),
+        "history_id": email_data.get("historyId", ""),
+        "snippet": email_data.get("snippet", ""),
+        "to": headers.get("to", ""),
+        "cc": headers.get("cc", ""),
+        "from": headers.get("from", ""),
+        "reply_to": headers.get("reply-to", ""),
+        "in_reply_to": headers.get("in-reply-to", ""),
+        "references": headers.get("references", ""),
+        "header_message_id": headers.get("message-id", ""),
+        "date": headers.get("date", ""),
+        "subject": headers.get("subject", ""),
+        "body": body_data or "",
+    }
 
-        return {
-            "id": email_data.get("id", ""),
-            "thread_id": email_data.get("threadId", ""),
-            "from": headers.get("from", ""),
-            "date": headers.get("date", ""),
-            "subject": headers.get("subject", ""),
-            "body": _clean_email_body(body_data) if body_data else "",
-        }
-    except Exception as e:
-        print(f"Error parsing email {email_data.get('id', 'unknown')}: {e}")
-        return email_data
+    logger.debug(f"email_details: {email_details}\n")
+    return email_details
+
+
+def parse_multipart_email(email_data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Parse email data and extract relevant information.
+    Returns the plain text and HTML body along with the images.
+
+    Args:
+        email_data (Dict[str, Any]): Raw email data from Gmail API.
+
+    Returns:
+        Optional[Dict[str, Any]]: Parsed email details or None if parsing fails.
+    """
+
+    payload = email_data.get("payload", {})
+    headers = {d["name"].lower(): d["value"] for d in payload.get("headers", [])}
+    logger.debug(f"parsing multipart email with headers: {headers}")
+
+    # Extract different parts of the email
+    plain_text_body = _get_email_plain_text_body(payload)
+    html_body = _get_email_html_body(payload)
+    # images = _get_email_images(payload)
+
+    # Log which content types were found
+    content_types = {
+        "Plain Text": bool(plain_text_body),
+        "HTML": bool(html_body),
+        # "Images": bool(images),
+    }
+    logger.debug(f"Content Found: {content_types}")
+
+    email_details = {
+        "id": email_data.get("id", ""),
+        "thread_id": email_data.get("threadId", ""),
+        "label_ids": email_data.get("labelIds", []),
+        "history_id": email_data.get("historyId", ""),
+        "snippet": email_data.get("snippet", ""),
+        "to": headers.get("to", ""),
+        "cc": headers.get("cc", ""),
+        "from": headers.get("from", ""),
+        "reply_to": headers.get("reply-to", ""),
+        "in_reply_to": headers.get("in-reply-to", ""),
+        "references": headers.get("references", ""),
+        "header_message_id": headers.get("message-id", ""),
+        "date": headers.get("date", ""),
+        "subject": headers.get("subject", ""),
+        "plain_text_body": plain_text_body or _clean_email_body(html_body),
+        "html_body": html_body or "",
+        # "images": images or [],
+    }
+    logger.debug(f"Email_details populated for multipart email {email_data.get('id', 'unknown')}\n")
+    return email_details
 
 
 def parse_draft_email(draft_email_data: dict[str, Any]) -> dict[str, str]:
@@ -111,24 +183,20 @@ def parse_draft_email(draft_email_data: dict[str, Any]) -> dict[str, str]:
     Returns:
         Optional[Dict[str, str]]: Parsed draft email details or None if parsing fails.
     """
-    try:
-        message = draft_email_data.get("message", {})
-        payload = message.get("payload", {})
-        headers = {d["name"].lower(): d["value"] for d in payload.get("headers", [])}
+    message = draft_email_data.get("message", {})
+    payload = message.get("payload", {})
+    headers = {d["name"].lower(): d["value"] for d in payload.get("headers", [])}
 
-        body_data = _get_email_body(payload)
+    body_data = _get_email_plain_text_body(payload)
 
-        return {
-            "id": draft_email_data.get("id", ""),
-            "thread_id": draft_email_data.get("threadId", ""),
-            "from": headers.get("from", ""),
-            "date": headers.get("internaldate", ""),
-            "subject": headers.get("subject", ""),
-            "body": _clean_email_body(body_data) if body_data else "",
-        }
-    except Exception as e:
-        print(f"Error parsing draft email {draft_email_data.get('id', 'unknown')}: {e}")
-        return draft_email_data
+    return {
+        "id": draft_email_data.get("id", ""),
+        "thread_id": draft_email_data.get("threadId", ""),
+        "from": headers.get("from", ""),
+        "date": headers.get("internaldate", ""),
+        "subject": headers.get("subject", ""),
+        "body": _clean_email_body(body_data) if body_data else "",
+    }
 
 
 def get_draft_url(draft_id: str) -> str:
@@ -143,9 +211,103 @@ def get_email_in_trash_url(email_id: str) -> str:
     return f"https://mail.google.com/mail/u/0/#trash/{email_id}"
 
 
-def _get_email_body(payload: dict[str, Any]) -> Optional[str]:
+def _extract_plain_body(parts: list) -> Optional[str]:
     """
-    Extract email body from payload.
+    Recursively extract the email body from parts, handling both plain text and HTML.
+
+    Args:
+        parts (List[Dict[str, Any]]): List of email parts.
+
+    Returns:
+        Optional[str]: Decoded and cleaned email body or None if not found.
+    """
+    for part in parts:
+        mime_type = part.get("mimeType")
+        logger.debug(f"\nProcessing part with mimeType: {mime_type}\n")
+
+        if mime_type == "text/plain" and "data" in part.get("body", {}):
+            logger.debug("\nFound text/plain part\n")
+            return urlsafe_b64decode(part["body"]["data"]).decode()
+
+        elif mime_type.startswith("multipart/"):
+            logger.debug(f"\nHandling multipart type: {mime_type}\n")
+            subparts = part.get("parts", [])
+            body = _extract_plain_body(subparts)
+            if body:
+                return body
+
+    logger.debug("\nNo suitable plain text body part found. Checking HTML body...\n")
+    return _extract_html_body(parts)
+
+
+def _extract_html_body(parts: list) -> Optional[str]:
+    """
+    Recursively extract the email body from parts, handling only HTML.
+
+    Args:
+        parts (List[Dict[str, Any]]): List of email parts.
+
+    Returns:
+        Optional[str]: Decoded and cleaned email body or None if not found.
+    """
+    for part in parts:
+        mime_type = part.get("mimeType")
+        logger.debug(f"\nProcessing part with mimeType: {mime_type}\n")
+
+        if mime_type == "text/html" and "data" in part.get("body", {}):
+            logger.debug("\nFound text/html part\n")
+            html_content = urlsafe_b64decode(part["body"]["data"]).decode()
+            return html_content
+
+        elif mime_type.startswith("multipart/"):
+            logger.debug(f"\nHandling multipart type: {mime_type}\n")
+            subparts = part.get("parts", [])
+            body = _extract_html_body(subparts)
+            if body:
+                return body
+
+    logger.debug("\nNo suitable html body part found\n")
+    return None
+
+
+def _get_email_images(payload: dict[str, Any]) -> Optional[list[str]]:
+    """
+    Extract the email images from an email payload.
+
+    Args:
+        payload (Dict[str, Any]): Email payload data.
+
+    Returns:
+        Optional[List[str]]: List of decoded image contents or None if none found.
+    """
+    images = []
+    for part in payload.get("parts", []):
+        mime_type = part.get("mimeType")
+        logger.debug(f"\nProcessing part with mimeType: {mime_type}\n")
+
+        if mime_type.startswith("image/") and "data" in part.get("body", {}):
+            logger.debug(f"\nFound image part with mimeType: {mime_type}\n")
+            image_content = part["body"]["data"]
+            images.append(image_content)
+
+        elif mime_type.startswith("multipart/"):
+            logger.debug(f"\nHandling multipart type: {mime_type}\n")
+            subparts = part.get("parts", [])
+            subimages = _get_email_images(subparts)
+            if subimages:
+                images.extend(subimages)
+
+    if images:
+        logger.debug(f"\nFound {len(images)} image(s)\n")
+        return images
+
+    logger.debug("\nNo suitable images part found\n")
+    return None
+
+
+def _get_email_plain_text_body(payload: dict[str, Any]) -> Optional[str]:
+    """
+    Extract email body from payload, handling 'multipart/alternative' parts.
 
     Args:
         payload (Dict[str, Any]): Email payload data.
@@ -153,14 +315,38 @@ def _get_email_body(payload: dict[str, Any]) -> Optional[str]:
     Returns:
         Optional[str]: Decoded email body or None if not found.
     """
+    logger.debug("\nGetting plain text body from payload.\n")
+
+    # Direct body extraction
     if "body" in payload and payload["body"].get("data"):
+        logger.debug("\nGot the body directly from payload\n")
+        return _clean_email_body(urlsafe_b64decode(payload["body"]["data"]).decode())
+
+    # Handle multipart and alternative parts
+    logger.debug("\nLooking for parts in payload for plain text body.\n")
+    return _clean_email_body(_extract_plain_body(payload.get("parts", [])))
+
+
+def _get_email_html_body(payload: dict[str, Any]) -> Optional[str]:
+    """
+    Extract email html body from payload, handling 'multipart/alternative' parts.
+
+    Args:
+        payload (Dict[str, Any]): Email payload data.
+
+    Returns:
+        Optional[str]: Decoded email body or None if not found.
+    """
+    logger.debug("\nGetting html body from payload.\n")
+
+    # Direct body extraction
+    if "body" in payload and payload["body"].get("data"):
+        logger.debug("\nGot the body directly from payload\n")
         return urlsafe_b64decode(payload["body"]["data"]).decode()
 
-    for part in payload.get("parts", []):
-        if part.get("mimeType") == "text/plain" and "data" in part["body"]:
-            return urlsafe_b64decode(part["body"]["data"]).decode()
-
-    return None
+    # Handle multipart and alternative parts
+    logger.debug("\nLooking for parts in payload for html body.\n")
+    return _extract_html_body(payload.get("parts", []))
 
 
 def _clean_email_body(body: str) -> str:
@@ -173,6 +359,11 @@ def _clean_email_body(body: str) -> str:
     Returns:
         str: Cleaned email body text.
     """
+    logger.debug(f"\nBody to clean: {body}\n")
+
+    if not body:
+        return ""
+
     try:
         # Remove HTML tags using BeautifulSoup
         soup = BeautifulSoup(body, "html.parser")
@@ -182,8 +373,8 @@ def _clean_email_body(body: str) -> str:
         cleaned_text = _clean_text(text)
 
         return cleaned_text.strip()
-    except Exception as e:
-        print(f"Error cleaning email body: {e}")
+    except Exception:
+        logger.exception("Error cleaning email body")
         return body
 
 
@@ -228,11 +419,12 @@ def _update_datetime(day: Day | None, time: TimeSlot | None, time_zone: str) -> 
 
 
 def build_query_string(
-    sender: str | None,
-    recipient: str | None,
-    subject: str | None,
-    body: str | None,
-    date_range: DateRange | None,
+    sender: str | None = None,
+    recipient: str | None = None,
+    subject: str | None = None,
+    body: str | None = None,
+    date_range: DateRange | None = None,
+    label: str | None = None,
 ) -> str:
     """Helper function to build a query string
     for Gmail list_emails_by_header and search_threads tools.
@@ -248,7 +440,46 @@ def build_query_string(
         query.append(body)
     if date_range:
         query.append(date_range.to_date_query())
+    if label:
+        query.append(f"label:{label}")
     return " ".join(query)
+
+
+def get_label_ids(service: Any, label_names: list[str]) -> dict[str, str]:
+    """
+    Retrieve label IDs for given label names.
+    Returns a dictionary mapping label names to their IDs.
+
+    Args:
+        service: Authenticated Gmail API service instance.
+        label_names: List of label names to retrieve IDs for.
+
+    Returns:
+        A dictionary mapping found label names to their corresponding IDs.
+    """
+    try:
+        # Fetch all existing labels from Gmail
+        labels = service.users().labels().list(userId="me").execute().get("labels", [])
+    except Exception as e:
+        error_msg = "Failed to list labels."
+        logger.exception(error_msg)
+        raise GmailToolError(message=error_msg, developer_message=str(e))
+
+    # Create a mapping from label names to their IDs
+    label_id_map = {label["name"]: label["id"] for label in labels}
+    logger.debug(f"Label ID Map: {label_id_map}")
+
+    found_labels = {}
+    for name in label_names:
+        label_id = label_id_map.get(name)
+        if label_id:
+            found_labels[name] = label_id
+        else:
+            logger.warning(f"Label '{name}' does not exist")
+
+    logger.debug(f"Found labels: {found_labels}")
+
+    return found_labels
 
 
 def fetch_messages(service: Any, query_string: str, limit: int) -> list[dict[str, Any]]:
