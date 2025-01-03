@@ -605,6 +605,7 @@ class EvalSuite:
                         tools=(str(name) for name in tool_names),
                         user="eval_user",
                         stream=False,
+                        seed=42,  # best effort to sample deterministically
                     )
                 except Exception as e:
                     error_message = str(e)
