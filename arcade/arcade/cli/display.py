@@ -125,25 +125,36 @@ def display_tool_messages(tool_messages: list[dict]) -> None:
             )
 
 
-def display_eval_results(results: list[list[dict[str, Any]]], show_details: bool = False) -> None:
+def display_eval_results(  # noqa: C901
+    results: list[tuple[str, list[dict[str, Any]]]], show_details: bool = False
+) -> None:
     """
     Display evaluation results in a format inspired by pytest's output.
 
     Args:
-        results: List of dictionaries containing evaluation results for each model.
+        results: List of tuples containing suite name and evaluation results for each model.
         show_details: Whether to show detailed results for each case.
     """
     total_passed = 0
     total_failed = 0
     total_warned = 0
     total_cases = 0
+    total_score = 0
 
-    for eval_suite in results:
-        for model_results in eval_suite:
+    model_averages = []  # List to store average scores for each model
+
+    for suite_name, suite_result in results:
+        for model_results in suite_result:
             model = model_results.get("model", "Unknown Model")
             rubric = model_results.get("rubric", "Unknown Rubric")
             cases = model_results.get("cases", [])
             total_cases += len(cases)
+
+            # Initialize model-specific score tracking
+            model_total_score = 0
+            model_total_cases = len(cases)
+            model_passed = 0
+            model_failed = 0
 
             console.print(f"[bold]Model:[/bold] [bold magenta]{model}[/bold magenta]")
             if show_details:
@@ -160,10 +171,15 @@ def display_eval_results(results: list[list[dict[str, Any]]], show_details: bool
                 )
                 if evaluation.passed:
                     total_passed += 1
+                    model_passed += 1
                 elif evaluation.warning:
                     total_warned += 1
                 else:
                     total_failed += 1
+                    model_failed += 1
+
+                total_score += evaluation.score
+                model_total_score += evaluation.score
 
                 # Display one-line summary for each case with score as a percentage
                 score_percentage = evaluation.score * 100
@@ -176,15 +192,52 @@ def display_eval_results(results: list[list[dict[str, Any]]], show_details: bool
                     console.print(_format_evaluation(evaluation))
                     console.print("-" * 80)
 
+            # Calculate the average score for the current model
+            model_average_score_percentage = (
+                (model_total_score / model_total_cases) * 100 if model_total_cases > 0 else 0
+            )
+            model_averages.append((
+                suite_name,
+                model,
+                model_average_score_percentage,
+                model_total_cases,
+                model_passed,
+                model_failed,
+            ))
+
+    # Display results for each model only if there is more than one model
+    console.print("\n[bold]Model Results:[/bold]\n" + "-" * 40)
+    for (
+        suite_name,
+        model,
+        avg_score,
+        model_total_cases,
+        model_passed,
+        model_failed,
+    ) in model_averages:
+        console.print(
+            f"[blue]{suite_name} {model} Results:[/blue]\n"
+            f"  Total: {model_total_cases}\n"
+            f"  Passed: {model_passed}\n"
+            f"  Failed: {model_failed}\n"
+            f"  Average Score: {avg_score:.2f}%\n" + "-" * 40
+        )
+
+    # Calculate average score percentage
+    average_score_percentage = (total_score / total_cases) * 100 if total_cases > 0 else 0
+
     # Summary
     summary = (
-        f"[bold]Summary -- [/bold]Total: {total_cases} -- [green]Passed: {total_passed}[/green]"
+        f"\n[bold]Summary:[/bold]\n"
+        f"  Total: {total_cases}\n"
+        f"  [green]Passed: {total_passed}[/green]\n"
     )
     if total_warned > 0:
-        summary += f" -- [yellow]Warnings: {total_warned}[/yellow]"
+        summary += f"  [yellow]Warnings: {total_warned}[/yellow]\n"
     if total_failed > 0:
-        summary += f" -- [red]Failed: {total_failed}[/red]"
-    console.print(summary + "\n")
+        summary += f"  [red]Failed: {total_failed}[/red]\n"
+    summary += f"  [blue]Average Score: {average_score_percentage:.2f}%[/blue]\n"
+    console.print(summary)
 
 
 def _format_evaluation(evaluation: "EvaluationResult") -> str:

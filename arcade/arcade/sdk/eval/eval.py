@@ -574,15 +574,42 @@ class EvalSuite:
                 messages.extend(case.additional_messages)
                 messages.append({"role": "user", "content": case.user_message})
 
-                # Get the model response
-                response = await client.chat.completions.create(  # type: ignore[call-overload]
-                    model=model,
-                    messages=messages,
-                    tool_choice="auto",
-                    tools=(str(name) for name in tool_names),
-                    user="eval_user",
-                    stream=False,
-                )
+                # Initialize case's result with known data about the case
+                case_result = {
+                    "name": case.name,
+                    "input": case.user_message,
+                    "expected_tool_calls": [
+                        {"name": tc.name, "args": tc.args} for tc in case.expected_tool_calls
+                    ],
+                    "predicted_tool_calls": [],
+                    "evaluation": None,
+                }
+
+                try:
+                    # Get the model response
+                    response = await client.chat.completions.create(  # type: ignore[call-overload]
+                        model=model,
+                        messages=messages,
+                        tool_choice="auto",
+                        tools=(str(name) for name in tool_names),
+                        user="eval_user",
+                        stream=False,
+                    )
+                except Exception as e:
+                    error_message = str(e)
+                    if hasattr(e, "body") and "message" in e.body:
+                        error_message = e.body["message"]
+
+                    expected_tool_call_names = ", ".join(tc.name for tc in case.expected_tool_calls)
+                    error_message = (
+                        f"{error_message}\nExpected tool calls: {expected_tool_call_names}"
+                    )
+
+                    case_result["evaluation"] = EvaluationResult(
+                        score=0.0, passed=False, failure_reason=error_message
+                    )
+
+                    return case_result
 
                 # Extract and fill default arguments for actual tool calls
                 predicted_args = get_tool_args(response)
@@ -596,21 +623,13 @@ class EvalSuite:
                     filled_actual_tool_calls.append((tool_name, args_with_defaults))
 
                 # Evaluate the case
-                evaluation = case.evaluate(filled_actual_tool_calls)
+                case_result["evaluation"] = case.evaluate(filled_actual_tool_calls)
 
                 # Prepare the result
-                result = {
-                    "name": case.name,
-                    "input": case.user_message,
-                    "expected_tool_calls": [
-                        {"name": tc.name, "args": tc.args} for tc in case.expected_tool_calls
-                    ],
-                    "predicted_tool_calls": [
-                        {"name": name, "args": args} for name, args in filled_actual_tool_calls
-                    ],
-                    "evaluation": evaluation,
-                }
-                return result
+                case_result["predicted_tool_calls"] = [
+                    {"name": name, "args": args} for name, args in filled_actual_tool_calls
+                ]
+                return case_result
 
         tasks = [sem_task(case) for case in self.cases]
         case_results = await asyncio.gather(*tasks)

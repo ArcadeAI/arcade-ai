@@ -383,6 +383,7 @@ def evals(
     async def run_evaluations() -> None:
         all_evaluations = []
         tasks = []
+        suite_names = []
         for suite_func in eval_suites:
             console.print(
                 Text.assemble(
@@ -400,13 +401,20 @@ def evals(
                     )
                 )
                 tasks.append(task)
+                suite_names.append(suite_func.__name__)
 
         # TODO add a progress bar here
         # TODO error handling on each eval
         # Wait for all suite functions to complete
         results = await asyncio.gather(*tasks)
         all_evaluations.extend(results)
-        display_eval_results(all_evaluations, show_details=show_details)
+
+        # Map eval suite names to their results
+        suite_name_to_result = []
+        for name, result in zip(suite_names, results):
+            suite_name_to_result.append((name, result))
+
+        display_eval_results(suite_name_to_result, show_details=show_details)
 
     asyncio.run(run_evaluations())
 
