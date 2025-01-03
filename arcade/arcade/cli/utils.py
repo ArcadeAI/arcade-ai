@@ -1,5 +1,6 @@
 import importlib.util
 import ipaddress
+import json
 import os
 import webbrowser
 from dataclasses import dataclass
@@ -644,7 +645,7 @@ def display_chat_help() -> None:
 
 def handle_user_command(
     user_input: str,
-    history: list,
+    history: list[dict[str, Any]],
     host: str,
     port: int,
     force_tls: bool,
@@ -660,7 +661,7 @@ def handle_user_command(
     elif user_input == ChatCommand.EXIT:
         raise KeyboardInterrupt
     elif user_input == ChatCommand.HISTORY:
-        console.print(history)
+        console.print(json.dumps(history, indent=2))
         return True
     elif user_input == ChatCommand.CLEAR:
         console.print("Chat history cleared.", style="bold green")

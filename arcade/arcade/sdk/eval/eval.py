@@ -3,6 +3,7 @@ import functools
 import inspect
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from arcade.core.config_model import Config
@@ -445,7 +446,7 @@ class EvalSuite:
         critics: list["Critic"] | None = None,
         system_message: str | None = None,
         rubric: EvalRubric | None = None,
-        additional_messages: list[dict[str, str]] | None = None,
+        additional_messages: list[dict[str, str]] | Path | None = None,
     ) -> None:
         """
         Add a new evaluation case to the suite.
@@ -457,8 +458,18 @@ class EvalSuite:
             critics: List of critics to evaluate the tool arguments.
             system_message: The system message to be used.
             rubric: The evaluation rubric for this case.
-            additional_messages: Optional list of additional messages for context.
+            additional_messages: Optional list of additional messages for context or a Path to a file containing them.
         """
+        if isinstance(additional_messages, Path):
+            try:
+                with additional_messages.open("r", encoding="utf-8") as file:
+                    additional_messages = json.load(file)
+            except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+                raise ValueError(
+                    f"Error reading 'additional_messages' for eval case '{name}' from file '{additional_messages}': {e}"
+                )
+            # TODO: ensure that the loaded file is a valid JSON file or that it is indeed a list[dict[str, str]]
+
         expected_tool_calls_with_defaults = [
             self._convert_to_named_expected_tool_call(tc) for tc in expected_tool_calls
         ]
