@@ -24,6 +24,25 @@ class Critic(ABC):
 
 
 @dataclass
+class NoneCritic(Critic):
+    """
+    A critic that has no effect on the evaluation results and does not actually evaluate.
+
+    If a critic is not found for an evaluation case's field, then
+    a NoneCritic is used to indicate that the field was not criticized.
+    """
+
+    weight: float = 0.0
+
+    def __post_init__(self) -> None:
+        self.weight = 0.0
+        super().__post_init__()
+
+    def evaluate(self, expected: Any, actual: Any) -> dict[str, Any]:
+        return {"match": None, "score": self.weight, "is_criticized": False}
+
+
+@dataclass
 class BinaryCritic(Critic):
     """
     A critic for performing exact equality comparisons between expected and actual values.
