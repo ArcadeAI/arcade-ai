@@ -24,7 +24,9 @@ except ImportError:
     )
 
 from arcade.sdk import Toolkit
-from arcade.worker.fastapi.worker import FastAPIWorker
+
+# from arcade.worker.fastapi.worker import FastAPIWorker
+from arcade.worker.fastapi.worker import HTTPWorker
 
 
 class InterceptHandler(logging.Handler):
@@ -116,9 +118,14 @@ def serve_default_worker(
 
     otel_handler = OTELHandler(app, enable=enable_otel)
 
-    worker = FastAPIWorker(
-        app, secret=worker_secret, disable_auth=disable_auth, otel_meter=otel_handler.get_meter()
+    worker = HTTPWorker(
+        host=host,
+        port=port,
+        secret=worker_secret,
+        disable_auth=disable_auth,
+        otel_meter=otel_handler.get_meter(),
     )
+    worker.start()
 
     toolkit_tool_counts = {}
     for toolkit in toolkits:
