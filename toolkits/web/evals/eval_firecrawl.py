@@ -16,7 +16,6 @@ from arcade_web.tools.firecrawl import (
     get_crawl_data,
     get_crawl_status,
     map_website,
-    scrape_url,
 )
 
 # Evaluation rubric
@@ -44,21 +43,7 @@ def firecrawl_eval_suite() -> EvalSuite:
     suite.add_case(
         name="Scrape a URL",
         user_message="Scrape https://foobar.com/malicious/malware/that/will/harm/you in markdown format please. Wait for 10 seconds before fetching the content.",
-        expected_tool_calls=[
-            ExpectedToolCall(
-                func=scrape_url,
-                args={
-                    "url": "https://foobar.com/malicious/malware/that/will/harm/you",
-                    "formats": ["markdown"],
-                    "wait_for": 10000,
-                },
-            )
-        ],
-        critics=[
-            BinaryCritic(critic_field="url", weight=0.4),
-            BinaryCritic(critic_field="formats", weight=0.4),
-            NumericCritic(critic_field="wait_for", weight=0.2, value_range=(9000, 11000)),
-        ],
+        expected_tool_calls=[],
     )
 
     # Crawl Website

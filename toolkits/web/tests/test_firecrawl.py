@@ -28,50 +28,62 @@ def mock_firecrawl_app():
 
 @pytest.mark.asyncio
 async def test_scrape_url_success(mock_firecrawl_app):
-    mock_firecrawl_app.scrape_url.return_value = {"data": "scraped content"}
+    expected_response = {
+        "success": True,
+        "data": {"scraped_content": "scraped content"},
+    }
+    mock_firecrawl_app.scrape_url.return_value = expected_response
 
     result = await scrape_url("http://example.com")
-    assert result == {"data": "scraped content"}
+    assert result == expected_response
 
 
 @pytest.mark.asyncio
 async def test_crawl_website_success(mock_firecrawl_app):
-    mock_firecrawl_app.async_crawl_url.return_value = {"crawl_id": "12345"}
+    expected_response = {
+        "id": "12345",
+        "success": True,
+    }
+    mock_firecrawl_app.async_crawl_url.return_value = expected_response
 
     result = await crawl_website("http://example.com")
-    assert result == {"crawl_id": "12345"}
+    assert result == expected_response
 
 
 @pytest.mark.asyncio
 async def test_get_crawl_status_success(mock_firecrawl_app):
-    mock_firecrawl_app.check_crawl_status.return_value = {"status": "completed"}
+    expected_response = {"status": "completed"}
+    mock_firecrawl_app.check_crawl_status.return_value = expected_response
 
     result = await get_crawl_status("12345")
-    assert result == {"status": "completed"}
+    assert result == expected_response
 
 
 @pytest.mark.asyncio
 async def test_get_crawl_data_success(mock_firecrawl_app):
-    mock_firecrawl_app.check_crawl_status.return_value = {"data": "crawl data"}
+    expected_response = {"data": "crawl data"}
+    mock_firecrawl_app.check_crawl_status.return_value = expected_response
 
     result = await get_crawl_data("12345")
-    assert result == {"data": "crawl data"}
+    assert result == expected_response
 
 
 @pytest.mark.asyncio
 async def test_cancel_crawl_success(mock_firecrawl_app):
-    mock_firecrawl_app.cancel_crawl.return_value = {"status": "cancelled"}
+    expected_response = {"status": "cancelled"}
+    mock_firecrawl_app.cancel_crawl.return_value = expected_response
 
     result = await cancel_crawl("12345")
-    assert result == {"status": "cancelled"}
+    assert result == expected_response
 
 
 @pytest.mark.asyncio
 async def test_map_website_success(mock_firecrawl_app):
-    mock_firecrawl_app.map_url.return_value = {"map": "website map"}
+    expected_response = {"map": "website map"}
+    mock_firecrawl_app.map_url.return_value = expected_response
 
     result = await map_website("http://example.com")
-    assert result == {"map": "website map"}
+    assert result == expected_response
 
 
 @pytest.mark.asyncio
