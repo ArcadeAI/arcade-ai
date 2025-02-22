@@ -41,6 +41,14 @@ def func_with_multiple_context_params(context: ToolContext, context2: ToolContex
     pass
 
 
+@tool(
+    desc="A function with a required secret with a missing key (illegal)",
+    requires_secrets=[""],
+)
+def func_with_missing_secret_key(context: ToolContext):
+    pass
+
+
 @pytest.mark.parametrize(
     "func_under_test, exception_type",
     [
@@ -78,6 +86,11 @@ def func_with_multiple_context_params(context: ToolContext, context2: ToolContex
             func_with_multiple_context_params,
             ToolDefinitionError,
             id=func_with_multiple_context_params.__name__,
+        ),
+        pytest.param(
+            func_with_missing_secret_key,
+            ToolDefinitionError,
+            id=func_with_missing_secret_key.__name__,
         ),
     ],
 )
