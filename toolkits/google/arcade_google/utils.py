@@ -10,7 +10,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource, build
 from googleapiclient.errors import HttpError
 
-from arcade_google.tools.models import Day, TimeSlot
+from arcade_google.models import Day, TimeSlot
 
 
 def parse_datetime(datetime_str: str, time_zone: str) -> datetime:
@@ -293,6 +293,40 @@ def build_drive_service(auth_token: Optional[str]) -> Resource:  # type: ignore[
     """
     auth_token = auth_token or ""
     return build("drive", "v3", credentials=Credentials(auth_token))
+
+
+def build_files_list_query(
+    document_contains: Optional[list[str]] = None,
+    document_not_contains: Optional[list[str]] = None,
+) -> str:
+    query = ["mimeType = 'application/vnd.google-apps.document' and trashed = false"]
+
+    if isinstance(document_contains, str):
+        document_contains = [document_contains]
+
+    if isinstance(document_not_contains, str):
+        document_not_contains = [document_not_contains]
+
+    if document_contains:
+        for keyword in document_contains:
+            name_contains = keyword.replace("'", "\\'")
+            full_text_contains = keyword.replace("'", "\\'")
+            keyword_query = (
+                f"name contains '{name_contains}' or fullText contains '{full_text_contains}'"
+            )
+            query.append(keyword_query)
+
+    if document_not_contains:
+        for keyword in document_not_contains:
+            name_not_contains = keyword.replace("'", "\\'")
+            full_text_not_contains = keyword.replace("'", "\\'")
+            keyword_query = (
+                f"name not contains '{name_not_contains}' and "
+                f"fullText not contains '{full_text_not_contains}'"
+            )
+            query.append(keyword_query)
+
+    return " and ".join(query)
 
 
 # Docs utils
