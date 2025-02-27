@@ -591,6 +591,53 @@ def build_drive_service(auth_token: Optional[str]) -> Resource:  # type: ignore[
     return build("drive", "v3", credentials=Credentials(auth_token))
 
 
+def build_file_tree(files: dict[str, Any]) -> dict[str, Any]:
+    file_tree: dict[str, Any] = {}
+
+    for file in files.values():
+        owners = file.get("owners", [])
+        if owners:
+            owners = [
+                {"name": owner.get("displayName", ""), "email": owner.get("emailAddress", "")}
+                for owner in owners
+            ]
+            file["owners"] = owners
+
+        if "size" in file:
+            file["size"] = {"value": int(file["size"]), "unit": "bytes"}
+
+        # Although "parents" is a list, a file can only have one parent
+        try:
+            parent_id = file["parents"][0]
+            del file["parents"]
+        except (KeyError, IndexError):
+            parent_id = None
+
+        # Determine the file's Drive ID
+        if "driveId" in file:
+            drive_id = file["driveId"]
+            del file["driveId"]
+        # If a shared drive id is not present, the file is in "My Drive"
+        else:
+            drive_id = "My Drive"
+
+        if drive_id not in file_tree:
+            file_tree[drive_id] = []
+
+        # Root files will have the Drive's id as the parent. If the parent id is not in the files
+        # list, the file must be at drive's root
+        if parent_id not in files:
+            file_tree[drive_id].append(file)
+
+        # Associate the file with its parent
+        else:
+            if "children" not in files[parent_id]:
+                files[parent_id]["children"] = []
+            files[parent_id]["children"].append(file)
+
+    return file_tree
+
+
 # Docs utils
 def build_docs_service(auth_token: Optional[str]) -> Resource:  # type: ignore[no-any-unimported]
     """
