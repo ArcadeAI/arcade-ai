@@ -8,7 +8,7 @@ from arcade.sdk.eval import (
 )
 
 import arcade_google
-from arcade_google.tools.drive import list_documents
+from arcade_google.tools.drive import get_file_tree_structure, list_documents
 from arcade_google.tools.models import Corpora, OrderBy
 
 # Evaluation rubric
@@ -101,6 +101,83 @@ def drive_eval_suite() -> EvalSuite:
         user_message="List my 10 most recently modified documents that are stored in my Microsoft OneDrive.",
         expected_tool_calls=[],
         critics=[],
+    )
+
+    return suite
+
+
+@tool_eval()
+def get_file_tree_structure_eval_suite() -> EvalSuite:
+    """Create an evaluation suite for Google Drive tools."""
+    suite = EvalSuite(
+        name="Google Drive Tools Evaluation",
+        system_message="You are an AI assistant that can manage Google Drive documents using the provided tools.",
+        catalog=catalog,
+        rubric=rubric,
+    )
+
+    suite.add_case(
+        name="get my google drive's file tree structure",
+        user_message="get my google drive's file tree structure",
+        expected_tool_calls=[
+            ExpectedToolCall(
+                func=get_file_tree_structure,
+                args={
+                    "include_shared_drives": True,
+                },
+            )
+        ],
+        critics=[
+            BinaryCritic(critic_field="include_shared_drives", weight=1.0),
+        ],
+    )
+
+    suite.add_case(
+        name="get my google drive's file tree structure without shared drives",
+        user_message="get my google drive's file tree structure without shared drives",
+        expected_tool_calls=[
+            ExpectedToolCall(
+                func=get_file_tree_structure,
+                args={
+                    "include_shared_drives": False,
+                },
+            )
+        ],
+        critics=[
+            BinaryCritic(critic_field="include_shared_drives", weight=1.0),
+        ],
+    )
+
+    suite.add_case(
+        name="what are the files in the folder 'hello world' in my google drives?",
+        user_message="what are the files in the folder 'hello world' in my google drives?",
+        expected_tool_calls=[
+            ExpectedToolCall(
+                func=get_file_tree_structure,
+                args={
+                    "include_shared_drives": True,
+                },
+            )
+        ],
+        critics=[
+            BinaryCritic(critic_field="include_shared_drives", weight=1.0),
+        ],
+    )
+
+    suite.add_case(
+        name="how many files are there in my google drives?",
+        user_message="how many files are there in my google drives?",
+        expected_tool_calls=[
+            ExpectedToolCall(
+                func=get_file_tree_structure,
+                args={
+                    "include_shared_drives": True,
+                },
+            )
+        ],
+        critics=[
+            BinaryCritic(critic_field="include_shared_drives", weight=1.0),
+        ],
     )
 
     return suite
