@@ -583,6 +583,15 @@ def remove_none_values(params: dict) -> dict:
     return {k: v for k, v in params.items() if v is not None}
 
 
+# Sheets utils
+def build_sheets_service(auth_token: Optional[str]) -> Resource:  # type: ignore[no-any-unimported]
+    """
+    Build a Sheets service object.
+    """
+    auth_token = auth_token or ""
+    return build("sheets", "v4", credentials=Credentials(auth_token))
+
+
 # Drive utils
 def build_drive_service(auth_token: Optional[str]) -> Resource:  # type: ignore[no-any-unimported]
     """
