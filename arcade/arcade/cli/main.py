@@ -445,7 +445,7 @@ def dev(
         typer.Exit(code=1)
 
 
-@cli.command(help="Start a local Arcade Worker server", rich_help_panel="Launch", hidden=True)
+@cli.command(help="Start a local Arcade Worker server", rich_help_panel="Launch")
 def workerup(
     host: str = typer.Option(
         "127.0.0.1",
