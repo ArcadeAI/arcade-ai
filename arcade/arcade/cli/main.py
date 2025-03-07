@@ -5,6 +5,7 @@ import uuid
 import webbrowser
 from typing import Any, Optional
 
+import requests
 import typer
 from arcadepy import Arcade
 from arcadepy.types import AuthorizationResponse
@@ -14,6 +15,7 @@ from rich.markup import escape
 from rich.text import Text
 from tqdm import tqdm
 
+import arcade.cli.worker as worker
 from arcade.cli.authn import LocalAuthCallbackServer, check_existing_login
 from arcade.cli.constants import (
     CREDENTIALS_FILE_PATH,
@@ -43,6 +45,8 @@ from arcade.cli.utils import (
     validate_and_get_config,
     version_callback,
 )
+from arcade.cli.worker import parse_deployment_response
+from arcade.worker.config.deployment import Deployment
 
 cli = typer.Typer(
     cls=OrderCommands,
@@ -52,6 +56,9 @@ cli = typer.Typer(
     pretty_exceptions_show_locals=False,
     pretty_exceptions_short=True,
 )
+
+
+cli.add_typer(worker.app, name="worker", help="Manage workers")
 console = Console()
 
 
@@ -482,6 +489,70 @@ def workerup(
         error_message = f"❌ Failed to start Arcade Worker: {escape(str(e))}"
         console.print(error_message, style="bold red")
         typer.Exit(code=1)
+
+
+@cli.command(help="Deploy worker to Arcade Cloud", rich_help_panel="Deployment")
+def deploy(
+    deployment_file: str = typer.Option(
+        "worker.toml", "--deployment-file", help="The deployment file to deploy."
+    ),
+) -> None:
+    """
+    Deploy a worker to Arcade Cloud.
+    """
+    CLOUD_HOST = "http://localhost:8001"
+
+    config = validate_and_get_config()
+    client = Arcade(api_key=config.api.key, base_url="http://localhost:9099")
+
+    deployment = Deployment.from_toml(deployment_file)
+    with console.status(f"Deploying {len(deployment.worker)} workers"):
+        for worker in deployment.worker:
+            request = worker.request()
+
+            console.log(f"Deploying '{worker.config.name}...'", style="dim")
+
+            response = requests.put(
+                f"{CLOUD_HOST}/api/v1/workers",
+                json=request.dict(),
+                headers={"Authorization": f"Bearer {config.api.key}"},
+                timeout=60,
+            )
+
+            worker_endpoint = parse_deployment_response(response.json())
+
+            console.log("Waiting for worker to start...", style="dim")
+
+            workers = client.worker.list().items
+            if not workers:
+                console.log("No workers found", style="bold red")
+                return
+
+            # TODO: Make this simpler for if the worker already exists or does not exist
+            if any(engine_worker.id == worker.config.name for engine_worker in workers):
+                client.worker.update(
+                    id=worker.config.name,
+                    enabled=worker.config.enabled,
+                    http={
+                        "retry": worker.config.retries,
+                        "uri": worker_endpoint,
+                        "secret": worker.config.secret,
+                        "timeout": worker.config.timeout,
+                    },
+                )
+            else:
+                client.worker.create(
+                    id=worker.config.name,
+                    enabled=worker.config.enabled,
+                    http={
+                        "retry": worker.config.retries,
+                        "uri": worker_endpoint,
+                        "secret": worker.config.secret,
+                        "timeout": worker.config.timeout,
+                    },
+                )
+
+            console.log(f"✅ Worker '{worker.config.name}' deployed successfully.", style="dim")
 
 
 @cli.callback()

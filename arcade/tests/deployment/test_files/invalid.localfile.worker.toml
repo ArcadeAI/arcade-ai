@@ -1,0 +1,42 @@
+
+[[worker]]
+[worker.config]
+name = "test"
+enabled = true
+timeout = 10
+retries = 3
+secret = "test-secret"
+
+[worker.pypi]
+packages = ["arcade-ai"]
+
+[worker.local_packages]
+packages = ["./missing_toolkit"]
+
+[[worker]]
+[worker.config]
+name = "test-2"
+enabled = true
+timeout = 10
+retries = 3
+secret = "test-secret"
+
+[worker.pypi]
+packages = ["arcade-ai"]
+
+[worker.local_packages]
+packages = ["./invalid.localfile.worker.toml"]
+
+[[worker]]
+[worker.config]
+name = "test-3"
+enabled = true
+timeout = 10
+retries = 3
+secret = "test-secret"
+
+[worker.pypi]
+packages = ["arcade-ai"]
+
+[worker.local_packages]
+packages = ["./invalid_toolkit"]
