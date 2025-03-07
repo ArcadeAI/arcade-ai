@@ -5,6 +5,9 @@ from arcadepy.resources.worker import WorkerListResponse
 from rich.console import Console
 from rich.table import Table
 
+from arcade.cli.constants import (
+    PROD_ENGINE_HOST,
+)
 from arcade.cli.utils import (
     OrderCommands,
     validate_and_get_config,
@@ -23,27 +26,19 @@ app = typer.Typer(
     pretty_exceptions_short=True,
 )
 
-domains = {
-    "prod": {
-        "cloud": "https://cloud.arcade.dev",
-        "api": "https://api.arcade.dev",
-    },
-    "dev": {
-        "cloud": "https://cloud.bosslevel.dev",
-        "api": "https://api.bosslevel.dev",
-    },
-    "local": {
-        "cloud": "http://localhost:8001",
-        "api": "http://localhost:9099",
-    },
-}
-
 
 @app.command("list", help="List all workers")
-def list_workers() -> None:
+def list_workers(
+    host: str = typer.Option(
+        "http://" + PROD_ENGINE_HOST,
+        "--host",
+        "-h",
+        help="The Arcade Engine host.",
+    ),
+) -> None:
     config = validate_and_get_config()
 
-    arcade = Arcade(api_key=config.api.key, base_url="http://localhost:9099")
+    arcade = Arcade(api_key=config.api.key, base_url=host)
     workers = arcade.worker.list()
 
     print_worker_table(workers, config)
@@ -104,16 +99,32 @@ def print_deployment_table(
 
 
 @app.command("enable", help="Enable a worker")
-def enable_worker(worker_id: str) -> None:
+def enable_worker(
+    worker_id: str,
+    host: str = typer.Option(
+        "http://" + PROD_ENGINE_HOST,
+        "--host",
+        "-h",
+        help="The Arcade Engine host.",
+    ),
+) -> None:
     config = validate_and_get_config()
-    arcade = Arcade(api_key=config.api.key, base_url="http://localhost:9099")
+    arcade = Arcade(api_key=config.api.key, base_url=host)
     arcade.worker.update(worker_id, enabled=True)
 
 
 @app.command("disable", help="Disable a worker")
-def disable_worker(worker_id: str) -> None:
+def disable_worker(
+    worker_id: str,
+    host: str = typer.Option(
+        "http://" + PROD_ENGINE_HOST,
+        "--host",
+        "-h",
+        help="The Arcade Engine host.",
+    ),
+) -> None:
     config = validate_and_get_config()
-    arcade = Arcade(api_key=config.api.key, base_url="http://localhost:9099")
+    arcade = Arcade(api_key=config.api.key, base_url=host)
     arcade.worker.update(worker_id, enabled=False)
 
 
