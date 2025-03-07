@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Optional
+from zoneinfo import ZoneInfo
 
 from arcade.sdk import ToolContext, tool
 from arcade.sdk.auth import Google
@@ -9,7 +10,10 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from arcade_google.tools.models import EventVisibility, SendUpdatesOptions
-from arcade_google.tools.utils import parse_datetime
+from arcade_google.tools.utils import (
+    compute_free_time_intersection,
+    parse_datetime,
+)
 
 
 @tool(
@@ -356,3 +360,112 @@ async def delete_event(
         f"Event with ID '{event_id}' successfully deleted from calendar '{calendar_id}'. "
         f"{notification_message}"
     )
+
+
+# TODO: would be nice to have a "min_slot_duration" parameter
+# TODO: find a way to have "include_weekends" parameter without confusing LLMs
+@tool(
+    requires_auth=Google(
+        scopes=["https://www.googleapis.com/auth/calendar.readonly"],
+    ),
+)
+async def find_time_slots_when_everyone_is_free(
+    context: ToolContext,
+    email_addresses: Annotated[
+        Optional[list[str]],
+        "The list of email addresses from people in the same organization domain (apart from the "
+        "currently logged in user) to search for free time slots. Defaults to None, which will "
+        "return free time slots for the current user only.",
+    ] = None,
+    start_date: Annotated[
+        Optional[str],
+        "The start date to search for time slots in the format 'YYYY-MM-DD'. Defaults to today's "
+        "date. It will search starting from this date at the time 00:00:00.",
+    ] = None,
+    end_date: Annotated[
+        Optional[str],
+        "The end date to search for time slots in the format 'YYYY-MM-DD'. Defaults to seven days "
+        "from the start date. It will search until this date at the time 23:59:59.",
+    ] = None,
+    start_time_boundary: Annotated[
+        str,
+        "Will return free slots in any given day starting from this time in the format 'HH:MM'. "
+        "Defaults to '08:00', which is a usual business hour start time.",
+    ] = "08:00",
+    end_time_boundary: Annotated[
+        str,
+        "Will return free slots in any given day until this time in the format 'HH:MM'. "
+        "Defaults to '18:00', which is a usual business hour end time.",
+    ] = "18:00",
+) -> Annotated[
+    dict,
+    "A dictionary with the free slots and the timezone in which time slots are represented.",
+]:
+    """
+    Provides time slots when everyone is free within a given date range and time boundaries.
+    """
+    credentials = Credentials(
+        context.authorization.token if context.authorization and context.authorization.token else ""
+    )
+    calendar_service = build("calendar", "v3", credentials=credentials)
+
+    email_addresses = email_addresses or []
+
+    if isinstance(email_addresses, str):
+        email_addresses = [email_addresses]
+
+    # Add the currently logged in user to the list of email addresses
+    oauth_service = build("oauth2", "v2", credentials=credentials)
+    user_info = oauth_service.userinfo().get().execute()
+    if user_info["email"] not in email_addresses:
+        email_addresses.append(user_info["email"])
+
+    calendar = calendar_service.calendars().get(calendarId="primary").execute()
+    timezone_name = calendar.get("timeZone")
+
+    try:
+        tz = ZoneInfo(timezone_name)
+    # If the calendar timezone name is not supported by Python's zoneinfo, use UTC
+    except Exception:
+        timezone_name = "UTC"
+        tz = ZoneInfo("UTC")
+
+    start_date = start_date or datetime.now().date().isoformat()
+    end_date = end_date or (datetime.now().date() + timedelta(days=7)).isoformat()
+
+    start_datetime = datetime.strptime(start_date, "%Y-%m-%d").replace(
+        hour=0, minute=0, second=0, microsecond=0, tzinfo=tz
+    )
+    end_datetime = datetime.strptime(end_date, "%Y-%m-%d").replace(
+        hour=23, minute=59, second=59, microsecond=0, tzinfo=tz
+    )
+
+    response = (
+        calendar_service.freebusy()
+        .query(
+            body={
+                "timeMin": start_datetime.isoformat(),
+                "timeMax": end_datetime.isoformat(),
+                "timeZone": timezone_name,
+                "items": [{"id": email_address} for email_address in email_addresses],
+            }
+        )
+        .execute()
+    )
+    busy_slots = response["calendars"]
+    free_slots = compute_free_time_intersection(
+        busy_data=busy_slots,
+        global_start=start_datetime,
+        global_end=end_datetime,
+        start_time_boundary=datetime.strptime(start_time_boundary, "%H:%M")
+        .time()
+        .replace(tzinfo=tz),
+        end_time_boundary=datetime.strptime(end_time_boundary, "%H:%M").time().replace(tzinfo=tz),
+        include_weekends=True,
+        tz=tz,
+    )
+
+    return {
+        "free_slots": free_slots,
+        "timezone": timezone_name,
+    }
