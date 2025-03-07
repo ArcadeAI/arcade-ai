@@ -37,26 +37,26 @@ def test_deployment_parsing(test_dir):
     deployment = Deployment.from_toml(config_path)
 
     # Test config section
-    assert deployment.worker[0].config.name == "test"
+    assert deployment.worker[0].config.id == "test"
     assert deployment.worker[0].config.enabled is True
     assert deployment.worker[0].config.timeout == 10
     assert deployment.worker[0].config.retries == 3
     assert deployment.worker[0].config.secret == "test-secret"
 
     # Test pypi section
-    assert deployment.worker[0].pypi.packages == [Package(name="arcade-x")]
+    assert deployment.worker[0].pypi_source.packages == [Package(name="arcade-x")]
 
     # Test local_packages section
-    assert deployment.worker[0].local_packages.packages == ["./mock_toolkit"]
+    assert deployment.worker[0].local_source.packages == ["./mock_toolkit"]
 
     # Test custom_repositories section
-    repo = deployment.worker[0].custom_repository[0]
+    repo = deployment.worker[0].custom_source[0]
     assert repo.index == "pypi"
     assert repo.index_url == "https://pypi.org/simple"
     assert repo.trusted_host == "pypi.org"
     assert repo.packages == [Package(name="arcade-ai", specifier=">=1.0.0")]
 
-    repo = deployment.worker[0].custom_repository[1]
+    repo = deployment.worker[0].custom_source[1]
     assert repo.index == "pypi2"
     assert repo.index_url == "https://pypi2.org/simple"
     assert repo.trusted_host == "pypi2.org"
@@ -75,9 +75,9 @@ def test_deployment_dict(test_dir):
     config_path = test_dir / "test_files" / "full.worker.toml"
     deployment = Deployment.from_toml(config_path)
     expected = json.loads("""{
-    "name": "test",
+    "id": "test",
     "secret": "test-secret",
-    "pypi": {
+    "pypi_source": {
         "packages": [
             {
                 "name": "arcade-x",
@@ -88,7 +88,7 @@ def test_deployment_dict(test_dir):
         "index_url": "https://pypi.org/simple",
         "trusted_host": "pypi.org"
     },
-    "custom_repositories": [
+    "custom_source": [
         {
             "packages": [
                 {
@@ -112,17 +112,17 @@ def test_deployment_dict(test_dir):
             "trusted_host": "pypi2.org"
         }
     ],
-    "local_packages": [
+    "local_source": [
         {
             "name": "mock_toolkit",
             "content": "H4sIAOgdymcC/+2XwWuDMBTGPftXZDltMNIkJtrCOrpbL4PdSxmiKXNVIzHt6n+/OAvtNrqbMur7Xd7j5YGH5Ps+JBMyWbzEh6WKU2W8XqAdlyqlgTj17ZxRzriHDt4A7GobG/d5b5zwKSpsVqg5iwRjs6kMBJEzMYtC7nvA1VPoZPtqtc63mZ14/ek/krKrYVcp/655JtyLY4wHNHL6D5iMPCSH1H+dGtX84YBubbO5vvsn4P/g/+f+LyihPBSUSfD/sfl/EWclqZo+9B8Kcdn/eXTyf+bmTAjp9E+H1P9I/b8yWWlv8VLlub5HH9rk6Q2+A+mPhf+R/8Hv/GeQ/4Pkf/Qj/3lEpAgCOQUPGF3+V01l9LtKLLG6yAfLf07F2f9fq/+QhhTyfwhW7d2TSitrmrVfxoVCc4TPXwX298rUmS7bA0oYodhPVZ2YrLLH6bNbR8d1tNEGPZnExQn2451906Z2OyvczdBDqvaL+Ksnrn3EazAaAAAAAAAAAAAAAAAAAOiJT7MTVu0AKAAA"
         }
     ]
 }""")
-    got = deployment.worker[0].request().dict()
+    got = deployment.worker[0].request().model_dump(mode="json")
     # Remove encoding part that contains the content
-    got_content = got["local_packages"][0].pop("content").split("+", 1)[1]
-    expected_content = expected["local_packages"][0].pop("content").split("+", 1)[1]
+    got_content = got["local_source"][0].pop("content").split("+", 1)[1]
+    expected_content = expected["local_source"][0].pop("content").split("+", 1)[1]
 
     assert got == expected
     assert got_content == expected_content
@@ -158,8 +158,8 @@ def test_unconfigured_local_package(test_dir):
 def test_duplicate_pypi_packages():
     worker = Worker(
         toml_path=Path(__file__),
-        config=Config(name="test", secret="test-secret"),
-        pypi=Pypi(packages=["arcade-slack", "arcade-slack"]),
+        config=Config(id="test", secret="test-secret"),
+        pypi_source=Pypi(packages=["arcade-slack", "arcade-slack"]),
     )
     with pytest.raises(ValueError):
         worker.validate_packages()
@@ -168,8 +168,8 @@ def test_duplicate_pypi_packages():
 def test_duplicate_custom_repository_packages():
     worker = Worker(
         toml_path=Path(__file__),
-        config=Config(name="test", secret="test-secret"),
-        custom_repository=[
+        config=Config(id="test", secret="test-secret"),
+        custom_source=[
             PackageRepository(
                 index="pypi",
                 index_url="https://pypi.org/simple",
@@ -185,8 +185,8 @@ def test_duplicate_custom_repository_packages():
 def test_duplicate_local_packages():
     worker = Worker(
         toml_path=Path(__file__),
-        config=Config(name="test", secret="test-secret"),
-        local_packages=LocalPackages(packages=["./mock_toolkit", "./mock_toolkit"]),
+        config=Config(id="test", secret="test-secret"),
+        local_source=LocalPackages(packages=["./mock_toolkit", "./mock_toolkit"]),
     )
     with pytest.raises(ValueError):
         worker.validate_packages()
@@ -195,9 +195,9 @@ def test_duplicate_local_packages():
 def test_duplicate_all_typed_packages():
     worker = Worker(
         toml_path=Path(__file__),
-        config=Config(name="test", secret="test-secret"),
-        pypi=Pypi(packages=["arcade-slack"]),
-        custom_repository=[
+        config=Config(id="test", secret="test-secret"),
+        pypi_source=Pypi(packages=["arcade-slack"]),
+        custom_source=[
             PackageRepository(
                 index="pypi",
                 index_url="https://pypi.org/simple",
@@ -205,7 +205,7 @@ def test_duplicate_all_typed_packages():
                 packages=["arcade-slack", "arcade-x"],
             )
         ],
-        local_packages=LocalPackages(packages=["./arcade-x"]),
+        local_source=LocalPackages(packages=["./arcade-x"]),
     )
     with pytest.raises(ValueError):
         worker.validate_packages()
@@ -214,11 +214,11 @@ def test_duplicate_all_typed_packages():
 def test_duplicate_worker_names():
     worker = Worker(
         toml_path=Path(__file__),
-        config=Config(name="test", secret="test-secret"),
+        config=Config(id="test", secret="test-secret"),
     )
     worker2 = Worker(
         toml_path=Path(__file__),
-        config=Config(name="test", secret="test-secret"),
+        config=Config(id="test", secret="test-secret"),
     )
     with pytest.raises(ValueError):
         Deployment(workers=[worker, worker2])

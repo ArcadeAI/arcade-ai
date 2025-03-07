@@ -5,7 +5,7 @@ import uuid
 import webbrowser
 from typing import Any, Optional
 
-import requests
+import httpx
 import typer
 from arcadepy import Arcade
 from arcadepy.types import AuthorizationResponse
@@ -496,63 +496,42 @@ def deploy(
     deployment_file: str = typer.Option(
         "worker.toml", "--deployment-file", help="The deployment file to deploy."
     ),
+    cloud_host: str = typer.Option(
+        "https://" + PROD_CLOUD_HOST,
+        "--cloud-host",
+        "-c",
+        help="The Arcade Cloud host to deploy to.",
+    ),
+    engine_host: str = typer.Option(
+        "http://" + PROD_ENGINE_HOST,
+        "--engine-host",
+        "-e",
+        help="The Arcade Engine host to deploy to.",
+    ),
 ) -> None:
     """
     Deploy a worker to Arcade Cloud.
     """
-    CLOUD_HOST = "http://localhost:8001"
 
     config = validate_and_get_config()
-    client = Arcade(api_key=config.api.key, base_url="http://localhost:9099")
+    engine_client = Arcade(api_key=config.api.key, base_url=engine_host)
+    cloud_client = httpx.Client(
+        base_url=cloud_host, headers={"Authorization": f"Bearer {config.api.key}"}
+    )
 
     deployment = Deployment.from_toml(deployment_file)
     with console.status(f"Deploying {len(deployment.worker)} workers"):
         for worker in deployment.worker:
-            request = worker.request()
-
-            console.log(f"Deploying '{worker.config.name}...'", style="dim")
-
-            response = requests.put(
-                f"{CLOUD_HOST}/api/v1/workers",
-                json=request.dict(),
-                headers={"Authorization": f"Bearer {config.api.key}"},
-                timeout=60,
-            )
-
-            worker_endpoint = parse_deployment_response(response.json())
-
-            console.log("Waiting for worker to start...", style="dim")
-
-            workers = client.worker.list().items
-            if not workers:
-                console.log("No workers found", style="bold red")
-                return
-
-            # TODO: Make this simpler for if the worker already exists or does not exist
-            if any(engine_worker.id == worker.config.name for engine_worker in workers):
-                client.worker.update(
-                    id=worker.config.name,
-                    enabled=worker.config.enabled,
-                    http={
-                        "retry": worker.config.retries,
-                        "uri": worker_endpoint,
-                        "secret": worker.config.secret,
-                        "timeout": worker.config.timeout,
-                    },
+            console.log(f"Deploying '{worker.config.id}...'", style="dim")
+            try:
+                response = worker.request().execute(cloud_client, engine_client)
+                parse_deployment_response(response)
+                console.log(f"✅ Worker '{worker.config.id}' deployed successfully.", style="dim")
+            except Exception as e:
+                console.log(
+                    f"❌ Failed to deploy worker '{worker.config.id}': {e}", style="bold red"
                 )
-            else:
-                client.worker.create(
-                    id=worker.config.name,
-                    enabled=worker.config.enabled,
-                    http={
-                        "retry": worker.config.retries,
-                        "uri": worker_endpoint,
-                        "secret": worker.config.secret,
-                        "timeout": worker.config.timeout,
-                    },
-                )
-
-            console.log(f"✅ Worker '{worker.config.name}' deployed successfully.", style="dim")
+                raise typer.Exit(code=1)
 
 
 @cli.callback()

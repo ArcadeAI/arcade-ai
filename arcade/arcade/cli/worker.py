@@ -76,27 +76,31 @@ def print_worker_table(workers: WorkerListResponse, config: Config) -> None:
     console.print(table)
 
 
-def parse_deployment_response(response: dict) -> str:
-    additions = response["data"]["changes"]["additions"] or []
-    removals = response["data"]["changes"]["removals"] or []
-    no_changes = response["data"]["changes"]["no_changes"] or []
-    print_deployment_table(additions, removals, no_changes)
-    return str(response["data"]["worker_endpoint"])
+def parse_deployment_response(response: dict) -> None:
+    changes = response["data"]["changes"]
+    additions = changes.get("additions", [])
+    removals = changes.get("removals", [])
+    updates = changes.get("updates", [])
+    no_changes = changes.get("no_changes", [])
+    print_deployment_table(additions, removals, updates, no_changes)
 
 
-def print_deployment_table(additions: list, removals: list, no_changes: list) -> None:
+def print_deployment_table(
+    additions: list, removals: list, updates: list, no_changes: list
+) -> None:
     table = Table(title="Changed Packages")
     table.add_column("Added", justify="right", style="green")
     table.add_column("Removed", justify="right", style="red")
     table.add_column("Updated", justify="right", style="yellow")
     table.add_column("No Changes", justify="right", style="dim")
-    max_rows = max(len(additions), len(removals), len(no_changes))
+    max_rows = max(len(additions), len(removals), len(updates), len(no_changes))
     for i in range(max_rows):
         addition = additions[i] if i < len(additions) else ""
         removal = removals[i] if i < len(removals) else ""
+        update = updates[i] if i < len(updates) else ""
         no_change = no_changes[i] if i < len(no_changes) else ""
-        table.add_row(addition, removal, "", no_change)
-        console.print(table)
+        table.add_row(addition, removal, update, no_change)
+    console.print(table)
 
 
 @app.command("enable", help="Enable a worker")
