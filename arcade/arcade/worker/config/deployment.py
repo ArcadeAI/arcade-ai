@@ -3,6 +3,7 @@ import io
 import os
 import tarfile
 from pathlib import Path
+from typing import Any
 
 import httpx
 import toml
@@ -78,7 +79,7 @@ class Request(BaseModel):
     custom_repositories: list[PackageRepository] | None = None
     local_packages: list[LocalPackage] | None = None
 
-    def execute(self, cloud_client: Client, engine_client: Arcade) -> dict:
+    def execute(self, cloud_client: Client, engine_client: Arcade) -> Any:
         try:
             cloud_response = cloud_client.put(
                 str(cloud_client.base_url) + "/api/v1/workers",
