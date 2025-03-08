@@ -5,6 +5,7 @@ import uuid
 import webbrowser
 from typing import Any, Optional
 
+import httpx
 import typer
 from arcadepy import Arcade
 from arcadepy.types import AuthorizationResponse
@@ -14,6 +15,7 @@ from rich.markup import escape
 from rich.text import Text
 from tqdm import tqdm
 
+import arcade.cli.worker as worker
 from arcade.cli.authn import LocalAuthCallbackServer, check_existing_login
 from arcade.cli.constants import (
     CREDENTIALS_FILE_PATH,
@@ -43,6 +45,8 @@ from arcade.cli.utils import (
     validate_and_get_config,
     version_callback,
 )
+from arcade.cli.worker import parse_deployment_response
+from arcade.worker.config.deployment import Deployment
 
 cli = typer.Typer(
     cls=OrderCommands,
@@ -52,6 +56,9 @@ cli = typer.Typer(
     pretty_exceptions_show_locals=False,
     pretty_exceptions_short=True,
 )
+
+
+cli.add_typer(worker.app, name="worker", help="Manage workers")
 console = Console()
 
 
@@ -513,6 +520,49 @@ def workerup(
         error_message = f"❌ Failed to start Arcade Worker: {escape(str(e))}"
         console.print(error_message, style="bold red")
         typer.Exit(code=1)
+
+
+@cli.command(help="Deploy worker to Arcade Cloud", rich_help_panel="Deployment")
+def deploy(
+    deployment_file: str = typer.Option(
+        "worker.toml", "--deployment-file", help="The deployment file to deploy."
+    ),
+    cloud_host: str = typer.Option(
+        "https://" + PROD_CLOUD_HOST,
+        "--cloud-host",
+        "-c",
+        help="The Arcade Cloud host to deploy to.",
+    ),
+    engine_host: str = typer.Option(
+        "http://" + PROD_ENGINE_HOST,
+        "--engine-host",
+        "-e",
+        help="The Arcade Engine host to deploy to.",
+    ),
+) -> None:
+    """
+    Deploy a worker to Arcade Cloud.
+    """
+
+    config = validate_and_get_config()
+    engine_client = Arcade(api_key=config.api.key, base_url=engine_host)
+    cloud_client = httpx.Client(
+        base_url=cloud_host, headers={"Authorization": f"Bearer {config.api.key}"}
+    )
+
+    deployment = Deployment.from_toml(deployment_file)
+    with console.status(f"Deploying {len(deployment.worker)} workers"):
+        for worker in deployment.worker:
+            console.log(f"Deploying '{worker.config.id}...'", style="dim")
+            try:
+                response = worker.request().execute(cloud_client, engine_client)
+                parse_deployment_response(response)
+                console.log(f"✅ Worker '{worker.config.id}' deployed successfully.", style="dim")
+            except Exception as e:
+                console.log(
+                    f"❌ Failed to deploy worker '{worker.config.id}': {e}", style="bold red"
+                )
+                raise typer.Exit(code=1)
 
 
 @cli.callback()
