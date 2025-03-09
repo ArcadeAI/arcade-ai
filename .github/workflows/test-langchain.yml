@@ -1,11 +1,15 @@
-name: Main
+name: Test LangChain Arcade
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "contrib/langchain/**"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "contrib/langchain/**"
 
 jobs:
   quality:
@@ -17,12 +21,20 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: pre-commit-langchain-${{ hashFiles('contrib/langchain/.pre-commit-config.yaml') }}
 
       - name: Set up the environment
         uses: ./.github/actions/setup-poetry-env
+        with:
+          python-version: "3.10"
+          working-directory: contrib/langchain
+
+      - name: Install
+        working-directory: contrib/langchain
+        run: make install
 
       - name: Run checks
+        working-directory: contrib/langchain
         run: make check
 
   tox:
@@ -48,8 +60,8 @@ jobs:
       - name: Load cached venv
         uses: actions/cache@v4
         with:
-          path: .tox
-          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('arcade/poetry.lock') }}
+          path: contrib/langchain/.tox
+          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('contrib/langchain/poetry.lock') }}
 
       - name: Install tox
         run: |
@@ -57,10 +69,13 @@ jobs:
           python -m pip install tox tox-gh-actions
 
       - name: Test with tox
-        run: cd arcade && tox
+        working-directory: contrib/langchain
+        run: tox
 
-      - name: Upload coverage reports to Codecov with GitHub Action on Python 3.10
+      - name: Upload coverage reports to Codecov with GitHub Action on Python 3.11
         uses: codecov/codecov-action@v4.0.1
-        if: ${{ matrix.python-version == '3.10' }}
+        if: ${{ matrix.python-version == '3.11' }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          file: contrib/langchain/coverage.xml
+          flags: langchain

@@ -1,3 +1,7 @@
-from .manager import ArcadeToolManager
+from .manager import ArcadeToolManager, AsyncToolManager, ToolManager
 
-__all__ = ["ArcadeToolManager"]
+__all__ = [
+    "ToolManager",
+    "AsyncToolManager",
+    "ArcadeToolManager",  # Deprecated
+]

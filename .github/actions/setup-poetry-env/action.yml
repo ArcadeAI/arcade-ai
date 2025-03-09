@@ -6,6 +6,10 @@ inputs:
     required: false
     description: "The python version to use"
     default: "3.11"
+  working-directory:
+    required: false
+    description: "The directory to run poetry commands in"
+    default: "arcade"
 
 runs:
   using: "composite"
@@ -22,17 +26,17 @@ runs:
         virtualenvs-in-project: true
 
     - name: Generate poetry.lock
-      run: cd arcade && poetry lock --no-update
+      run: cd ${{ inputs.working-directory }} && poetry lock --no-update
       shell: bash
 
     - name: Load cached venv
       id: cached-poetry-dependencies
       uses: actions/cache@v4
       with:
-        path: .venv
-        key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('arcade/poetry.lock') }}
+        path: ${{ inputs.working-directory }}/.venv
+        key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles(format('{0}/poetry.lock', inputs.working-directory)) }}
 
     - name: Install dependencies
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: cd arcade && poetry install --no-interaction --all-extras
+      run: cd ${{ inputs.working-directory }} && poetry install --no-interaction --all-extras
       shell: bash

@@ -1,7 +1,7 @@
 import os
 
 # Import necessary classes and modules
-from langchain_arcade import ArcadeToolManager
+from langchain_arcade import ToolManager
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
@@ -9,11 +9,14 @@ from langgraph.prebuilt import ToolNode
 
 arcade_api_key = os.environ["ARCADE_API_KEY"]
 
-# Initialize the tool manager and fetch tools compatible with langgraph
-tool_manager = ArcadeToolManager(api_key=arcade_api_key)
-tools = tool_manager.get_tools(
-    toolkits=["Google"], langgraph=True
-)  # use langgraph-specific behavior
+# Initialize the tool manager and fetch tools
+manager = ToolManager(api_key=arcade_api_key)
+manager.init_tools(toolkits=["Github"])
+
+# convert to langchain tools and use interrupts for auth
+tools = manager.to_langchain(use_interrupts=True)
+
+# Initialize the prebuilt tool node
 tool_node = ToolNode(tools)
 
 # Create a language model instance and bind it with the tools
@@ -36,7 +39,7 @@ def call_agent(state: MessagesState):
 def should_continue(state: MessagesState):
     if state["messages"][-1].tool_calls:
         for tool_call in state["messages"][-1].tool_calls:
-            if tool_manager.requires_auth(tool_call["name"]):
+            if manager.requires_auth(tool_call["name"]):
                 return "authorization"
         return "tools"  # Proceed to tool execution if no authorization is needed
     return END  # End the workflow if no tool calls are present
@@ -47,17 +50,17 @@ def authorize(state: MessagesState, config: dict):
     user_id = config["configurable"].get("user_id")
     for tool_call in state["messages"][-1].tool_calls:
         tool_name = tool_call["name"]
-        if not tool_manager.requires_auth(tool_name):
+        if not manager.requires_auth(tool_name):
             continue
-        auth_response = tool_manager.authorize(tool_name, user_id)
+        auth_response = manager.authorize(tool_name, user_id)
         if auth_response.status != "completed":
             # Prompt the user to visit the authorization URL
             print(f"Visit the following URL to authorize: {auth_response.url}")
 
             # wait for the user to complete the authorization
             # and then check the authorization status again
-            tool_manager.wait_for_auth(auth_response.id)
-            if not tool_manager.is_authorized(auth_response.id):
+            manager.wait_for_auth(auth_response.id)
+            if not manager.is_authorized(auth_response.id):
                 # node interrupt?
                 raise ValueError("Authorization failed")
 
@@ -90,13 +93,13 @@ if __name__ == "__main__":
         "messages": [
             {
                 "role": "user",
-                "content": "Check and see if I have any important emails in my inbox",
+                "content": "Star arcadeai/arcade-ai on github",
             }
         ],
     }
 
     # Configuration with thread and user IDs for authorization purposes
-    config = {"configurable": {"thread_id": "4", "user_id": "user@example.com"}}
+    config = {"configurable": {"thread_id": "4", "user_id": "user@example.comm"}}
 
     # Run the graph and stream the outputs
     for chunk in graph.stream(inputs, config=config, stream_mode="values"):
