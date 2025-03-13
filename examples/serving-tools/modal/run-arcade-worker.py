@@ -5,7 +5,7 @@ from modal import App, Image, asgi_app
 # Define the FastAPI app
 app = App("arcade-worker")
 
-toolkits = ["arcade-google", "arcade-slack"]
+toolkits = ["arcade_google", "arcade_slack"]
 
 image = Image.debian_slim().pip_install("arcade-ai").pip_install(toolkits)
 
@@ -26,8 +26,8 @@ def fastapi_app():
 
     # Register toolkits we've installed
     installed_toolkits = Toolkit.find_all_arcade_toolkits()
-    for toolkit in toolkits:
-        if toolkit in installed_toolkits:
+    for toolkit in installed_toolkits:
+        if toolkit.package_name in toolkits:
             worker.register_toolkit(toolkit)
 
     return web_app

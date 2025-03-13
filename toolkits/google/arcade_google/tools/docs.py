@@ -3,7 +3,7 @@ from typing import Annotated
 from arcade.sdk import ToolContext, tool
 from arcade.sdk.auth import Google
 
-from arcade_google.tools.utils import build_docs_service
+from arcade_google.utils import build_docs_service
 
 
 # Uses https://developers.google.com/docs/api/reference/rest/v1/documents/get
@@ -12,7 +12,7 @@ from arcade_google.tools.utils import build_docs_service
 @tool(
     requires_auth=Google(
         scopes=[
-            "https://www.googleapis.com/auth/documents.readonly",
+            "https://www.googleapis.com/auth/drive.file",
         ],
     )
 )
@@ -39,7 +39,7 @@ async def get_document_by_id(
 @tool(
     requires_auth=Google(
         scopes=[
-            "https://www.googleapis.com/auth/documents",
+            "https://www.googleapis.com/auth/drive.file",
         ],
     )
 )
@@ -85,7 +85,7 @@ async def insert_text_at_end_of_document(
 @tool(
     requires_auth=Google(
         scopes=[
-            "https://www.googleapis.com/auth/documents",
+            "https://www.googleapis.com/auth/drive.file",
         ],
     )
 )
@@ -118,7 +118,7 @@ async def create_blank_document(
 @tool(
     requires_auth=Google(
         scopes=[
-            "https://www.googleapis.com/auth/documents",
+            "https://www.googleapis.com/auth/drive.file",
         ],
     )
 )

@@ -9,6 +9,10 @@ import typer
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from rich.console import Console
 
+from arcade.worker.config.deployment import (
+    create_demo_deployment,
+)
+
 console = Console()
 
 # Retrieve the installed version of arcade-ai
@@ -111,7 +115,7 @@ def create_new_toolkit(output_directory: str) -> None:
         "toolkit_description": toolkit_description,
         "toolkit_author_name": toolkit_author_name,
         "toolkit_author_email": toolkit_author_email,
-        "arcade_version": f"{ARCADE_VERSION.rsplit('.', 1)[0]}.*",
+        "arcade_version": f"^{ARCADE_VERSION}",
         "creation_year": datetime.now().year,
     }
     template_directory = Path(__file__).parent.parent / "templates" / "{{ toolkit_name }}"
@@ -123,6 +127,17 @@ def create_new_toolkit(output_directory: str) -> None:
 
     try:
         create_package(env, template_directory, toolkit_directory, context)
+        create_deployment(toolkit_directory, toolkit_name)
     except Exception:
         remove_toolkit(toolkit_directory, toolkit_name)
         raise
+
+
+def create_deployment(toolkit_directory: Path, toolkit_name: str) -> None:
+    worker_toml = toolkit_directory / "worker.toml"
+    if not worker_toml.exists():
+        create_demo_deployment(worker_toml, toolkit_name)
+    else:
+        pass
+        # Disabled pending bug fix
+        # update_deployment_with_local_packages(worker_toml, toolkit_name)

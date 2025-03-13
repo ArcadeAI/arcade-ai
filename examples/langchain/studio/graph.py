@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 
 from configuration import AgentConfigurable
-from langchain_arcade import ArcadeToolManager
+from langchain_arcade import ToolManager
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.errors import NodeInterrupt
@@ -13,9 +13,9 @@ from langgraph.prebuilt import ToolNode
 arcade_api_key = os.getenv("ARCADE_API_KEY")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
-toolkit = ArcadeToolManager(api_key=arcade_api_key)
-# Retrieve tools compatible with LangGraph
-tools = toolkit.get_tools()
+manager = ToolManager(api_key=arcade_api_key)
+manager.init_tools(toolkits=["Github"])
+tools = manager.to_langchain(use_interrupts=True)
 tool_node = ToolNode(tools)
 
 PROMPT_TEMPLATE = f"""
@@ -58,7 +58,7 @@ def should_continue(state: AgentState, config: dict):
 def check_auth(state: AgentState, config: dict):
     user_id = config["configurable"].get("user_id")
     tool_name = state["messages"][-1].tool_calls[0]["name"]
-    auth_response = toolkit.authorize(tool_name, user_id)
+    auth_response = manager.authorize(tool_name, user_id)
     if auth_response.status != "completed":
         return {"auth_url": auth_response.url}
     else:
@@ -69,7 +69,7 @@ def authorize(state: AgentState, config: dict):
     """Function to handle tool authorization"""
     user_id = config["configurable"].get("user_id")
     tool_name = state["messages"][-1].tool_calls[0]["name"]
-    auth_response = toolkit.authorize(tool_name, user_id)
+    auth_response = manager.authorize(tool_name, user_id)
     if auth_response.status != "completed":
         auth_message = (
             f"Please authorize the application in your browser:\n\n {state.get('auth_url')}"

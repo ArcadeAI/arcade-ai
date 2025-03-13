@@ -3,8 +3,10 @@ import os
 import threading
 import uuid
 import webbrowser
+from pathlib import Path
 from typing import Any, Optional
 
+import httpx
 import typer
 from arcadepy import Arcade
 from arcadepy.types import AuthorizationResponse
@@ -14,6 +16,7 @@ from rich.markup import escape
 from rich.text import Text
 from tqdm import tqdm
 
+import arcade.cli.worker as worker
 from arcade.cli.authn import LocalAuthCallbackServer, check_existing_login
 from arcade.cli.constants import (
     CREDENTIALS_FILE_PATH,
@@ -30,7 +33,7 @@ from arcade.cli.launcher import start_servers
 from arcade.cli.show import show_logic
 from arcade.cli.utils import (
     OrderCommands,
-    compute_engine_base_url,
+    compute_base_url,
     compute_login_url,
     get_eval_files,
     get_user_input,
@@ -43,6 +46,8 @@ from arcade.cli.utils import (
     validate_and_get_config,
     version_callback,
 )
+from arcade.cli.worker import parse_deployment_response
+from arcade.worker.config.deployment import Deployment
 
 cli = typer.Typer(
     cls=OrderCommands,
@@ -52,6 +57,9 @@ cli = typer.Typer(
     pretty_exceptions_show_locals=False,
     pretty_exceptions_short=True,
 )
+
+
+cli.add_typer(worker.app, name="worker", help="Manage workers")
 console = Console()
 
 
@@ -225,7 +233,7 @@ def chat(
         )
 
     config = validate_and_get_config()
-    base_url = compute_engine_base_url(force_tls, force_no_tls, host, port)
+    base_url = compute_base_url(force_tls, force_no_tls, host, port)
 
     client = Arcade(api_key=config.api.key, base_url=base_url)
     user_email = config.user.email if config.user else None
@@ -352,7 +360,7 @@ def evals(
     config = validate_and_get_config()
 
     host = PROD_ENGINE_HOST if cloud else host
-    base_url = compute_engine_base_url(force_tls, force_no_tls, host, port)
+    base_url = compute_base_url(force_tls, force_no_tls, host, port)
 
     models_list = models.split(",")  # Use 'models_list' to avoid shadowing
 
@@ -420,7 +428,37 @@ def evals(
     asyncio.run(run_evaluations())
 
 
-@cli.command(help="Launch Arcade locally for tool dev", rich_help_panel="Launch")
+@cli.command(
+    help="Start Arcade Worker serving tools installed in the current python environment",
+    rich_help_panel="Launch",
+)
+def serve(
+    host: str = typer.Option(
+        "127.0.0.1",
+        help="Host for the app, from settings by default.",
+        show_default=True,
+    ),
+    port: int = typer.Option(
+        "8002", "-p", "--port", help="Port for the app, defaults to ", show_default=True
+    ),
+    disable_auth: bool = typer.Option(
+        False,
+        "--no-auth",
+        help="Disable authentication for the worker. Not recommended for production.",
+        show_default=True,
+    ),
+    otel_enable: bool = typer.Option(
+        False, "--otel-enable", help="Send logs to OpenTelemetry", show_default=True
+    ),
+    debug: bool = typer.Option(False, "--debug", "-d", help="Show debug information"),
+) -> None:
+    """
+    Start a local Arcade Worker server.
+    """
+    workerup(host, port, disable_auth, otel_enable, debug)
+
+
+@cli.command(help="Launch Arcade Worker and Engine locally", rich_help_panel="Launch")
 def dev(
     host: str = typer.Option("127.0.0.1", help="Host for the worker server.", show_default=True),
     port: int = typer.Option(
@@ -445,6 +483,7 @@ def dev(
         typer.Exit(code=1)
 
 
+# TODO: deprecate this next major version
 @cli.command(help="Start a local Arcade Worker server", rich_help_panel="Launch", hidden=True)
 def workerup(
     host: str = typer.Option(
@@ -484,6 +523,82 @@ def workerup(
         typer.Exit(code=1)
 
 
+@cli.command(help="Deploy worker to Arcade Cloud", rich_help_panel="Deployment")
+def deploy(
+    deployment_file: str = typer.Option(
+        "worker.toml", "--deployment-file", "-d", help="The deployment file to deploy."
+    ),
+    cloud_host: str = typer.Option(
+        PROD_CLOUD_HOST,
+        "--cloud-host",
+        "-c",
+        help="The Arcade Cloud host to deploy to.",
+        hidden=True,
+    ),
+    cloud_port: int = typer.Option(
+        None,
+        "--cloud-port",
+        "-cp",
+        help="The port of the Arcade Cloud host.",
+        hidden=True,
+    ),
+    host: str = typer.Option(
+        PROD_ENGINE_HOST,
+        "--host",
+        "-h",
+        help="The Arcade Engine host to register the worker to.",
+    ),
+    port: int = typer.Option(
+        None,
+        "--port",
+        "-p",
+        help="The port of the Arcade Engine host.",
+    ),
+    force_tls: bool = typer.Option(
+        False,
+        "--tls",
+        help="Whether to force TLS for the connection to the Arcade Engine. If not specified, the connection will use TLS if the engine URL uses a 'https' scheme.",
+    ),
+    force_no_tls: bool = typer.Option(
+        False,
+        "--no-tls",
+        help="Whether to disable TLS for the connection to the Arcade Engine.",
+    ),
+) -> None:
+    """
+    Deploy a worker to Arcade Cloud.
+    """
+
+    config = validate_and_get_config()
+    engine_url = compute_base_url(force_tls, force_no_tls, host, port)
+    engine_client = Arcade(api_key=config.api.key, base_url=engine_url)
+    cloud_url = compute_base_url(force_tls, force_no_tls, cloud_host, cloud_port)
+    cloud_client = httpx.Client(
+        base_url=cloud_url, headers={"Authorization": f"Bearer {config.api.key}"}
+    )
+
+    # Fetch deployment configuration
+    try:
+        deployment = Deployment.from_toml(Path(deployment_file))
+    except Exception as e:
+        console.print(f"❌ Failed to parse deployment file: {e}", style="bold red")
+        raise typer.Exit(code=1)
+
+    with console.status(f"Deploying {len(deployment.worker)} workers"):
+        for worker in deployment.worker:
+            console.log(f"Deploying '{worker.config.id}...'", style="dim")
+            try:
+                # Attempt to deploy worker
+                response = worker.request().execute(cloud_client, engine_client)
+                parse_deployment_response(response)
+                console.log(f"✅ Worker '{worker.config.id}' deployed successfully.", style="dim")
+            except Exception as e:
+                console.log(
+                    f"❌ Failed to deploy worker '{worker.config.id}': {e}", style="bold red"
+                )
+                raise typer.Exit(code=1)
+
+
 @cli.callback()
 def main_callback(
     ctx: typer.Context,
@@ -496,7 +611,7 @@ def main_callback(
         help="Print version and exit.",
     ),
 ) -> None:
-    excluded_commands = {login.__name__, logout.__name__, workerup.__name__}
+    excluded_commands = {login.__name__, logout.__name__, serve.__name__}
     if ctx.invoked_subcommand in excluded_commands:
         return
 
