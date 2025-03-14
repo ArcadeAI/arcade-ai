@@ -1,0 +1,3 @@
+import os
+
+DEFAULT_GOOGLE_JOBS_LANGUAGE = os.getenv("GOOGLE_JOBS_LANGUAGE", "en")
