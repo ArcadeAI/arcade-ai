@@ -1,6 +1,9 @@
 from datetime import date, datetime, time, timedelta
 from enum import Enum
+from typing import Optional
 from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel, model_validator
 
 
 # ---------------------------------------------------------------------------- #
@@ -361,3 +364,125 @@ class GmailReplyToWhom(str, Enum):
 class GmailAction(str, Enum):
     SEND = "send"
     DRAFT = "draft"
+
+
+# ---------------------------------------------------------------------------- #
+# Google Sheets Models and Enums
+# ---------------------------------------------------------------------------- #
+class CellErrorType(str, Enum):
+    """The type of error in a cell
+
+    Implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/other#ErrorType
+    """
+
+    ERROR_TYPE_UNSPECIFIED = "ERROR_TYPE_UNSPECIFIED"  # The default error type, do not use this.
+    ERROR = "ERROR"  # Corresponds to the #ERROR! error.
+    NULL_VALUE = "NULL_VALUE"  # Corresponds to the #NULL! error.
+    DIVIDE_BY_ZERO = "DIVIDE_BY_ZERO"  # Corresponds to the #DIV/0 error.
+    VALUE = "VALUE"  # Corresponds to the #VALUE! error.
+    REF = "REF"  # Corresponds to the #REF! error.
+    NAME = "NAME"  # Corresponds to the #NAME? error.
+    NUM = "NUM"  # Corresponds to the #NUM! error.
+    N_A = "N_A"  # Corresponds to the #N/A error.
+    LOADING = "LOADING"  # Corresponds to the Loading... state.
+
+
+class CellErrorValue(BaseModel):
+    """An error in a cell
+
+    Implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/other#ErrorValue
+    """
+
+    type: CellErrorType
+    message: str
+
+
+class CellExtendedValue(BaseModel):
+    """The kinds of value that a cell in a spreadsheet can have
+
+    Implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/other#ExtendedValue
+    """
+
+    numberValue: Optional[float] = None
+    stringValue: Optional[str] = None
+    boolValue: Optional[bool] = None
+    formulaValue: Optional[str] = None
+    errorValue: Optional["CellErrorValue"] = None  # Forward reference if necessary
+
+    @model_validator(mode="after")
+    def check_exactly_one_value(cls, values):
+        provided = [v for v in values.values() if v is not None]
+        if len(provided) != 1:
+            raise ValueError(
+                "Exactly one of numberValue, stringValue, boolValue, "
+                "formulaValue, or errorValue must be set."
+            )
+        return values
+
+
+class CellData(BaseModel):
+    """Data about a specific cell
+
+    A partial implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/cells#CellData
+    """
+
+    userEnteredValue: CellExtendedValue
+
+
+class RowData(BaseModel):
+    """Data about each cellin a row
+
+    A partial implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/sheets#RowData
+    """
+
+    values: list[CellData]
+
+
+class GridData(BaseModel):
+    """Data in the grid
+
+    A partial implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/sheets#GridData
+    """
+
+    startRow: int
+    startColumn: int
+    rowData: list[RowData]
+
+
+class SheetProperties(BaseModel):
+    """Properties of a Sheet
+
+    A partial implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/sheets#SheetProperties
+    """
+
+    sheetId: int
+    title: str
+
+
+class Sheet(BaseModel):
+    """A Sheet in a spreadsheet
+
+    A partial implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/sheets#Sheet
+    """
+
+    properties: SheetProperties
+    data: Optional[list[GridData]] = None
+
+
+class SpreadsheetProperties(BaseModel):
+    """Properties of a spreadsheet
+
+    A partial implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets#SpreadsheetProperties
+    """
+
+    title: str
+
+
+class Spreadsheet(BaseModel):
+    """A spreadsheet
+
+    A partial implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets
+    """
+
+    properties: SpreadsheetProperties
+    sheets: list[Sheet]
