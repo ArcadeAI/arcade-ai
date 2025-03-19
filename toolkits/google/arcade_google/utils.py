@@ -814,3 +814,104 @@ def search_contacts(service: Any, query: str, limit: Optional[int]) -> list[dict
     )
 
     return cast(list[dict[str, Any]], response.get("results", []))
+
+
+# ----------------------------------------------------------------
+# Sheets utils
+# ----------------------------------------------------------------
+
+
+def col_to_index(col: str) -> int:
+    """Convert a sheet's column string to a 0-indexed column index
+
+    Args:
+        col (str): The column string to convert. e.g., "A", "AZ", "QED"
+
+    Returns:
+        int: The 0-indexed column index.
+    """
+    result = 0
+    for char in col.upper():
+        result = result * 26 + (ord(char) - ord("A") + 1)
+    return result - 1
+
+
+def index_to_col(index: int) -> str:
+    """Convert a 0-indexed column index to its corresponding column string
+
+    Args:
+        index (int): The 0-indexed column index to convert.
+
+    Returns:
+        str: The column string. e.g., "A", "AZ", "QED"
+    """
+    result = ""
+    index += 1
+    while index > 0:
+        index, rem = divmod(index - 1, 26)
+        result = chr(rem + ord("A")) + result
+    return result
+
+
+def is_col_greater(col1: str, col2: str) -> bool:
+    """Determine if col1 represents a column that comes after col2 in a sheet
+
+    This comparison is based on:
+      1. The length of the column string (longer means greater).
+      2. Lexicographical comparison if both strings are the same length.
+
+    Args:
+        col1 (str): The first column string to compare.
+        col2 (str): The second column string to compare.
+
+    Returns:
+        bool: True if col1 comes after col2, False otherwise.
+    """
+    if len(col1) != len(col2):
+        return len(col1) > len(col2)
+    return col1.upper() > col2.upper()
+
+
+def compute_sheet_data_dimensions(
+    data: dict[int, dict[str, Union[int, float, str, bool]]],
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """
+    Compute the dimensions of a sheet based on the data provided.
+
+    Args:
+        data (dict[int, dict[str, Union[int, float, str, bool]]]):
+            The data to compute the dimensions of.
+
+    Returns:
+        tuple[tuple[int, int], tuple[int, int]]: The dimensions of the sheet. The first tuple
+            contains the row range (start, end) and the second tuple contains the column range
+            (start, end).
+    """
+    max_row = 0
+    min_row = float("inf")
+    max_col_str = None
+    min_col_str = None
+
+    for key, row in data.items():
+        try:
+            row_num = int(key)
+        except ValueError:
+            continue
+        if row_num > max_row:
+            max_row = row_num
+        if row_num < min_row:
+            min_row = row_num
+
+        if isinstance(row, dict):
+            for col in row:
+                # Update max column string
+                if max_col_str is None or is_col_greater(col, max_col_str):
+                    max_col_str = col
+                # Update min column string
+                if min_col_str is None or is_col_greater(min_col_str, col):
+                    min_col_str = col
+
+    max_col_index = col_to_index(max_col_str) if max_col_str is not None else -1
+    min_col_index = col_to_index(min_col_str) if min_col_str is not None else 0
+
+    return (min_row, max_row), (min_col_index, max_col_index)

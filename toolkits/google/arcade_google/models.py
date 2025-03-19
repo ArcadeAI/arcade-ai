@@ -410,14 +410,14 @@ class CellExtendedValue(BaseModel):
     errorValue: Optional["CellErrorValue"] = None  # Forward reference if necessary
 
     @model_validator(mode="after")
-    def check_exactly_one_value(cls, values):
-        provided = [v for v in values.values() if v is not None]
+    def check_exactly_one_value(cls, instance):
+        provided = [v for v in instance.__dict__.values() if v is not None]
         if len(provided) != 1:
             raise ValueError(
                 "Exactly one of numberValue, stringValue, boolValue, "
                 "formulaValue, or errorValue must be set."
             )
-        return values
+        return instance
 
 
 class CellData(BaseModel):
@@ -449,6 +449,16 @@ class GridData(BaseModel):
     rowData: list[RowData]
 
 
+class GridProperties(BaseModel):
+    """Properties of a grid
+
+    A partial implementation of https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/sheets#GridProperties
+    """
+
+    rowCount: int
+    columnCount: int
+
+
 class SheetProperties(BaseModel):
     """Properties of a Sheet
 
@@ -457,6 +467,7 @@ class SheetProperties(BaseModel):
 
     sheetId: int
     title: str
+    gridProperties: Optional[GridProperties] = None
 
 
 class Sheet(BaseModel):

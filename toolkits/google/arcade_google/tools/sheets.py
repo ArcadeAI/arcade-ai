@@ -5,14 +5,26 @@ from arcade.sdk import ToolContext, tool
 from arcade.sdk.auth import Google
 from arcade.sdk.errors import RetryableToolError
 
+from arcade_google.constants import (
+    DEFAULT_SHEET_COLUMN_COUNT,
+    DEFAULT_SHEET_ROW_COUNT,
+)
 from arcade_google.models import (
+    CellData,
+    CellExtendedValue,
     GridData,
+    GridProperties,
+    RowData,
     Sheet,
     SheetProperties,
     Spreadsheet,
     SpreadsheetProperties,
 )
-from arcade_google.utils import build_sheets_service
+from arcade_google.utils import (
+    build_sheets_service,
+    compute_sheet_data_dimensions,
+    index_to_col,
+)
 
 """
 Possible input data for a sheet:
@@ -23,26 +35,77 @@ Option 1:
         "The data to write to the spreadsheet. A JSON string representing a dictionary mapping "
         "row numbers to dictionaries mapping column letters to cell values. "
         "For example, data[23]['C'] would be the value of the cell in row 23, column C. "
-        "Type hint: dict[int, dict[str, Union[float, str, bool]]]",
+        "Type hint: dict[int, dict[str, Union[int, float, str, bool]]]",
     ] = None,
 
 Option 2:
     data: Annotated[
-        Optional[list[list[Union[float, str, bool]]]],
+        Optional[str],
         "The data to write to the spreadsheet. A list of lists of values, where each inner list "
         "represents a row in the spreadsheet. An empty outer list represents an empty row. An "
         "empty inner list represents an empty cell. For example, data[22][2] would be the value "
         "of the cell in row 23, column C. "
+        "Type hint: list[list[Union[int, float, str, bool]]]",
     ] = None,
 
 Option 3:
     data: Annotated[
-        Optional[dict[str, Union[float, str, bool]]],
-        "The data to write to the spreadsheet. A dictionary, where each key is the column letter
-        and row number (as a string) and each value is the cell value. For example, data['C23'] "
-        "would be the value of the cell in column C, row 23. "
+        Optional[str],
+        "The data to write to the spreadsheet. A JSON string representing a dictionary, "
+        "where each key is the column letter and row number (as a string) and each value is "
+        "the cell value. For example, data['C23'] would be the value of the cell in column C, "
+        "row 23. "
+        "Type hint: dict[str, Union[int, float, str, bool]]",
     ] = None,
 """
+
+
+# @tool(
+#     requires_auth=Google(
+#         scopes=["https://www.googleapis.com/auth/spreadsheets"],
+#     )
+# )
+# def create_spreadsheet2(
+#     context: ToolContext,
+#     title: Annotated[str, "The title of the new spreadsheet"] = "Untitled spreadsheet",
+#     data: Annotated[
+#         Optional[str],
+#         "The data to write to the spreadsheet. A JSON string representing a list of lists of "
+#         "values, where each inner list represents a row in the spreadsheet. An empty outer list "
+#         "represents an empty row. An empty inner list represents an empty cell. For example, "
+#         "data[22][2] would be the value of the cell in row 23, column C. "
+#         "Type hint: list[list[Union[int, float, str, bool]]]",
+#     ] = None,
+# ) -> Annotated[dict, "The created spreadsheet's id and title"]:
+#     """Create a new spreadsheet with the provided title and data
+
+#     Returns the newly created spreadsheet's id and title
+#     """
+#     return {"done": True}
+
+
+# @tool(
+#     requires_auth=Google(
+#         scopes=["https://www.googleapis.com/auth/spreadsheets"],
+#     )
+# )
+# def create_spreadsheet3(
+#     context: ToolContext,
+#     title: Annotated[str, "The title of the new spreadsheet"] = "Untitled spreadsheet",
+#     data: Annotated[
+#         Optional[str],
+#         "The data to write to the spreadsheet. A JSON string representing a dictionary, "
+#         "where each key is the column letter and row number (as a string) and each value is "
+#         "the cell value. For example, data['C23'] would be the value of the cell in column C, "
+#         "row 23. "
+#         "Type hint: dict[str, Union[int, float, str, bool]]",
+#     ] = None,
+# ) -> Annotated[dict, "The created spreadsheet's id and title"]:
+#     """Create a new spreadsheet with the provided title and data
+
+#     Returns the newly created spreadsheet's id and title
+#     """
+#     return {"done": True}
 
 
 @tool(
@@ -50,77 +113,116 @@ Option 3:
         scopes=["https://www.googleapis.com/auth/spreadsheets"],
     )
 )
-def create_spreadsheet(
+def create_spreadsheet(  # noqa: C901
     context: ToolContext,
     title: Annotated[str, "The title of the new spreadsheet"] = "Untitled spreadsheet",
     data: Annotated[
         Optional[str],
-        "The data to write to the spreadsheet. A JSON string representing a dictionary mapping "
-        "row numbers to dictionaries mapping column letters to cell values. "
-        "For example, data[23]['C'] would be the value of the cell in row 23, column C. "
-        "Type hint: dict[int, dict[str, Union[float, str, bool]]]",
+        "The data to write to the spreadsheet. A JSON string "
+        "(property names enclosed in double quotes) representing a dictionary mapping row numbers "
+        "to dictionaries mapping column letters to cell values. For example, data[23]['C'] would "
+        "be the value of the cell in row 23, column C. "
+        "Type hint: dict[int, dict[str, Union[int, float, str, bool]]]",
     ] = None,
 ) -> Annotated[dict, "The created spreadsheet's id and title"]:
     """Create a new spreadsheet with the provided title and data
 
     Returns the newly created spreadsheet's id and title
     """
-
-    # TODO: Convert data_dict to a list of GridData objects and
-
     service = build_sheets_service(context.get_auth_token_or_empty())
 
-    def create_sheet_data(data: dict) -> list[GridData] | None:
+    # Parse input data into a dictionary.
+    if data is not None:
         try:
-            data_dict = json.loads(data) if data else None  # noqa: F841
+            data_dict = json.loads(data)
         except json.JSONDecodeError as e:
             raise RetryableToolError(
                 message="Invalid JSON data for input parameter `data`",
                 additional_prompt_content=f"The error was: {e!s}",
-                retry_after=10,
+                retry_after_ms=100,
             )
+    else:
+        data_dict = {}
 
-    sheet_data = create_sheet_data(data)
+    (_, max_row), (min_col_index, max_col_index) = compute_sheet_data_dimensions(data)
+
+    # Create grid data that takes into account the actual column range.
+    def create_sheet_data(data_dict_inner: dict | None) -> list[GridData] | None:  # noqa: C901
+        # Determine which rows have data.
+        row_numbers_inner = []
+        for key in data_dict_inner:
+            try:
+                row_numbers_inner.append(int(key))
+            except ValueError:
+                continue
+        if not row_numbers_inner:
+            return None
+
+        # Group contiguous row numbers.
+        sorted_rows = sorted(set(row_numbers_inner))
+        groups = []
+        current_group = [sorted_rows[0]]
+        for r in sorted_rows[1:]:
+            if r == current_group[-1] + 1:
+                current_group.append(r)
+            else:
+                groups.append(current_group)
+                current_group = [r]
+        groups.append(current_group)
+
+        sheet_data = []
+        for group in groups:
+            rows_data = []
+            for r in group:
+                row_cells = []
+                # JSON keys are strings.
+                row_data = data_dict_inner.get(str(r), {})
+                for col_idx in range(min_col_index, max_col_index + 1):
+                    col_letter = index_to_col(col_idx)
+                    if col_letter in row_data:
+                        cell_value = row_data[col_letter]
+                        if isinstance(cell_value, bool):
+                            cell_val = CellExtendedValue(boolValue=cell_value)
+                        elif isinstance(cell_value, (int, float)):
+                            cell_val = CellExtendedValue(numberValue=cell_value)
+                        elif isinstance(cell_value, str) and cell_value.startswith("="):
+                            # Check if the string represents a formula.
+                            cell_val = CellExtendedValue(formulaValue=cell_value)
+                        elif isinstance(cell_value, str):
+                            cell_val = CellExtendedValue(stringValue=cell_value)
+                        else:
+                            cell_val = CellExtendedValue(stringValue=str(cell_value))
+                        cell_data = CellData(userEnteredValue=cell_val)
+                    else:
+                        # Create an empty cell.
+                        cell_val = CellExtendedValue(stringValue="")
+                        cell_data = CellData(userEnteredValue=cell_val)
+                    row_cells.append(cell_data)
+                rows_data.append(RowData(values=row_cells))
+            grid_data = GridData(
+                startRow=group[0] - 1,  # 0-indexed
+                startColumn=min_col_index,  # start at the first column that has data
+                rowData=rows_data,
+            )
+            sheet_data.append(grid_data)
+
+        return sheet_data
+
+    sheet_data = create_sheet_data(data_dict)
+
+    grid_properties = GridProperties(
+        rowCount=max(DEFAULT_SHEET_ROW_COUNT, max_row),
+        columnCount=max(DEFAULT_SHEET_COLUMN_COUNT, max_col_index + 1),
+    )
+    sheet_properties = SheetProperties(sheetId=1, title="Sheet1", gridProperties=grid_properties)
 
     spreadsheet = Spreadsheet(
         properties=SpreadsheetProperties(title=title),
-        sheets=[Sheet(properties=SheetProperties(sheetId=1, title="Sheet1"), data=sheet_data)],
+        sheets=[Sheet(properties=sheet_properties, data=sheet_data)],
     )
 
     body = spreadsheet.model_dump()
 
-    # body = {
-    #     "properties": {"title": title},
-    #     "sheets": [
-    #         {
-    #             "properties": {"sheetId": 1, "title": "Sheet1"},
-    #             "data": [
-    #                 {
-    #                     "startRow": 0,
-    #                     "startColumn": 0,
-    #                     "rowData": [
-    #                         {
-    #                             "values": [
-    #                                 {"userEnteredValue": {"stringValue": "my string!"}},  # A1
-    #                                 {"userEnteredValue": {"numberValue": 123}},  # B1
-    #                                 {},  # C1
-    #                                 {"userEnteredValue": {"boolValue": True}},  # D1
-    #                             ]
-    #                         },
-    #                         {
-    #                             "values": [
-    #                                 {"userEnteredValue": {"stringValue": "my string2!"}},  # A2
-    #                                 {},
-    #                                 {"userEnteredValue": {"numberValue": 1234}},
-    #                                 {"userEnteredValue": {"boolValue": False}},
-    #                             ]
-    #                         },
-    #                     ],
-    #                 }
-    #             ],
-    #         }
-    #     ],
-    # }
     response = (
         service.spreadsheets().create(body=body, fields="spreadsheetId,properties/title").execute()
     )
