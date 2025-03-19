@@ -5,25 +5,13 @@ from arcade.sdk import ToolContext, tool
 from arcade.sdk.auth import Google
 from arcade.sdk.errors import RetryableToolError
 
-from arcade_google.constants import (
-    DEFAULT_SHEET_COLUMN_COUNT,
-    DEFAULT_SHEET_ROW_COUNT,
-)
 from arcade_google.models import (
-    CellData,
-    CellExtendedValue,
-    GridData,
-    GridProperties,
-    RowData,
-    Sheet,
-    SheetProperties,
     Spreadsheet,
     SpreadsheetProperties,
 )
 from arcade_google.utils import (
     build_sheets_service,
-    compute_sheet_data_dimensions,
-    index_to_col,
+    create_sheet,
 )
 
 """
@@ -113,7 +101,7 @@ Option 3:
         scopes=["https://www.googleapis.com/auth/spreadsheets"],
     )
 )
-def create_spreadsheet(  # noqa: C901
+def create_spreadsheet(
     context: ToolContext,
     title: Annotated[str, "The title of the new spreadsheet"] = "Untitled spreadsheet",
     data: Annotated[
@@ -144,81 +132,9 @@ def create_spreadsheet(  # noqa: C901
     else:
         data_dict = {}
 
-    (_, max_row), (min_col_index, max_col_index) = compute_sheet_data_dimensions(data)
-
-    # Create grid data that takes into account the actual column range.
-    def create_sheet_data(data_dict_inner: dict | None) -> list[GridData] | None:  # noqa: C901
-        # Determine which rows have data.
-        row_numbers_inner = []
-        for key in data_dict_inner:
-            try:
-                row_numbers_inner.append(int(key))
-            except ValueError:
-                continue
-        if not row_numbers_inner:
-            return None
-
-        # Group contiguous row numbers.
-        sorted_rows = sorted(set(row_numbers_inner))
-        groups = []
-        current_group = [sorted_rows[0]]
-        for r in sorted_rows[1:]:
-            if r == current_group[-1] + 1:
-                current_group.append(r)
-            else:
-                groups.append(current_group)
-                current_group = [r]
-        groups.append(current_group)
-
-        sheet_data = []
-        for group in groups:
-            rows_data = []
-            for r in group:
-                row_cells = []
-                # JSON keys are strings.
-                row_data = data_dict_inner.get(str(r), {})
-                for col_idx in range(min_col_index, max_col_index + 1):
-                    col_letter = index_to_col(col_idx)
-                    if col_letter in row_data:
-                        cell_value = row_data[col_letter]
-                        if isinstance(cell_value, bool):
-                            cell_val = CellExtendedValue(boolValue=cell_value)
-                        elif isinstance(cell_value, (int, float)):
-                            cell_val = CellExtendedValue(numberValue=cell_value)
-                        elif isinstance(cell_value, str) and cell_value.startswith("="):
-                            # Check if the string represents a formula.
-                            cell_val = CellExtendedValue(formulaValue=cell_value)
-                        elif isinstance(cell_value, str):
-                            cell_val = CellExtendedValue(stringValue=cell_value)
-                        else:
-                            cell_val = CellExtendedValue(stringValue=str(cell_value))
-                        cell_data = CellData(userEnteredValue=cell_val)
-                    else:
-                        # Create an empty cell.
-                        cell_val = CellExtendedValue(stringValue="")
-                        cell_data = CellData(userEnteredValue=cell_val)
-                    row_cells.append(cell_data)
-                rows_data.append(RowData(values=row_cells))
-            grid_data = GridData(
-                startRow=group[0] - 1,  # 0-indexed
-                startColumn=min_col_index,  # start at the first column that has data
-                rowData=rows_data,
-            )
-            sheet_data.append(grid_data)
-
-        return sheet_data
-
-    sheet_data = create_sheet_data(data_dict)
-
-    grid_properties = GridProperties(
-        rowCount=max(DEFAULT_SHEET_ROW_COUNT, max_row),
-        columnCount=max(DEFAULT_SHEET_COLUMN_COUNT, max_col_index + 1),
-    )
-    sheet_properties = SheetProperties(sheetId=1, title="Sheet1", gridProperties=grid_properties)
-
     spreadsheet = Spreadsheet(
         properties=SpreadsheetProperties(title=title),
-        sheets=[Sheet(properties=sheet_properties, data=sheet_data)],
+        sheets=[create_sheet(data_dict)],
     )
 
     body = spreadsheet.model_dump()
