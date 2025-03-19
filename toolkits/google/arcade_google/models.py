@@ -1,9 +1,10 @@
+import json
 from datetime import date, datetime, time, timedelta
 from enum import Enum
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------- #
@@ -497,3 +498,108 @@ class Spreadsheet(BaseModel):
 
     properties: SpreadsheetProperties
     sheets: list[Sheet]
+
+
+CellValue = int | float | str | bool
+
+
+class SheetDataInput(BaseModel):
+    """
+    SheetDataInput models the cell data of a spreadsheet in a custom format.
+
+    It is a dictionary mapping row numbers (as ints) to dictionaries that map
+    column letters (as uppercase strings) to cell values (int, float, str, or bool).
+
+    This model enforces that:
+      - The outer keys are convertible to int.
+      - The inner keys are alphabetic strings (normalized to uppercase).
+      - All cell values are only of type int, float, str, or bool.
+
+    The model automatically serializes (via `json_data()`)
+    and validates the inner types.
+    """
+
+    data: dict[int, dict[str, CellValue]]
+
+    @classmethod
+    def _parse_json_if_string(cls, value):
+        """Parses the value if it is a JSON string, otherwise returns it.
+
+        Helper method for when validating the `data` field.
+        """
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError as e:
+                raise TypeError(f"Invalid JSON: {e}")
+        return value
+
+    @classmethod
+    def _validate_row_key(cls, row_key) -> int:
+        """Converts the row key to an integer, raising an error if conversion fails.
+
+        Helper method for when validating the `data` field.
+        """
+        try:
+            return int(row_key)
+        except (ValueError, TypeError):
+            raise TypeError(f"Row key '{row_key}' is not convertible to int.")
+
+    @classmethod
+    def _validate_inner_cells(cls, cells, row_int: int) -> dict:
+        """Validates that 'cells' is a dict mapping column letters to valid cell values
+        and normalizes the keys.
+
+        Helper method for when validating the `data` field.
+        """
+        if not isinstance(cells, dict):
+            raise TypeError(
+                f"Value for row '{row_int}' must be a dict mapping column letters to cell values."
+            )
+        new_inner = {}
+        for col_key, cell_value in cells.items():
+            if not isinstance(col_key, str):
+                raise TypeError(f"Column key '{col_key}' must be a string.")
+            col_string = col_key.upper()
+            if not col_string.isalpha():
+                raise TypeError(f"Column key '{col_key}' is invalid. Must be alphabetic.")
+            if not isinstance(cell_value, (int, float, str, bool)):
+                raise TypeError(
+                    f"Cell value for {col_string}{row_int} must be an int, float, str, or bool."
+                )
+            new_inner[col_string] = cell_value
+        return new_inner
+
+    @field_validator("data", mode="before")
+    @classmethod
+    def validate_and_convert_keys(cls, value):
+        """
+        Validates data when SheetDataInput is instantiated and converts it to the correct format.
+        Uses private helper methods to parse JSON, validate row keys, and validate inner cell data.
+        """
+        if value is None:
+            return {}
+
+        value = cls._parse_json_if_string(value)
+        if isinstance(value, dict):
+            new_value = {}
+            for row_key, cells in value.items():
+                row_int = cls._validate_row_key(row_key)
+                inner_cells = cls._validate_inner_cells(cells, row_int)
+                new_value[row_int] = inner_cells
+            return new_value
+
+        raise TypeError("data must be a dict or a valid JSON string representing a dict")
+
+    def json_data(self) -> str:
+        """
+        Serialize the sheet data to a JSON string.
+        """
+        return json.dumps(self.data)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "SheetDataInput":
+        """
+        Create a SheetData instance from a JSON string.
+        """
+        return cls.model_validate_json(json_str)

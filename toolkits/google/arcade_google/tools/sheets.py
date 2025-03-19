@@ -1,4 +1,3 @@
-import json
 from typing import Annotated, Optional
 
 from arcade.sdk import ToolContext, tool
@@ -6,6 +5,7 @@ from arcade.sdk.auth import Google
 from arcade.sdk.errors import RetryableToolError
 
 from arcade_google.models import (
+    SheetDataInput,
     Spreadsheet,
     SpreadsheetProperties,
 )
@@ -107,9 +107,9 @@ def create_spreadsheet(
     data: Annotated[
         Optional[str],
         "The data to write to the spreadsheet. A JSON string "
-        "(property names enclosed in double quotes) representing a dictionary mapping row numbers "
-        "to dictionaries mapping column letters to cell values. For example, data[23]['C'] would "
-        "be the value of the cell in row 23, column C. "
+        "(property names enclosed in double quotes) representing a dictionary that "
+        "maps row numbers to dictionaries that map column letters to cell values. "
+        "For example, data[23]['C'] would be the value of the cell in row 23, column C. "
         "Type hint: dict[int, dict[str, Union[int, float, str, bool]]]",
     ] = None,
 ) -> Annotated[dict, "The created spreadsheet's id and title"]:
@@ -119,22 +119,19 @@ def create_spreadsheet(
     """
     service = build_sheets_service(context.get_auth_token_or_empty())
 
-    # Parse input data into a dictionary.
-    if data is not None:
-        try:
-            data_dict = json.loads(data)
-        except json.JSONDecodeError as e:
-            raise RetryableToolError(
-                message="Invalid JSON data for input parameter `data`",
-                additional_prompt_content=f"The error was: {e!s}",
-                retry_after_ms=100,
-            )
-    else:
-        data_dict = {}
+    try:
+        sheet_data = SheetDataInput(data=data)
+    except Exception as e:
+        msg = "Invalid JSON or unexpected data format for parameter `data`"
+        raise RetryableToolError(
+            message=msg,
+            additional_prompt_content=f"{msg}: {e}",
+            retry_after_ms=100,
+        )
 
     spreadsheet = Spreadsheet(
         properties=SpreadsheetProperties(title=title),
-        sheets=[create_sheet(data_dict)],
+        sheets=[create_sheet(sheet_data)],
     )
 
     body = spreadsheet.model_dump()

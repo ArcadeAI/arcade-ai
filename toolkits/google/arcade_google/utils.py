@@ -22,6 +22,7 @@ from arcade_google.exceptions import GmailToolError, GoogleServiceError
 from arcade_google.models import (
     CellData,
     CellExtendedValue,
+    CellValue,
     Corpora,
     Day,
     GmailAction,
@@ -31,6 +32,7 @@ from arcade_google.models import (
     OrderBy,
     RowData,
     Sheet,
+    SheetDataInput,
     SheetProperties,
     TimeSlot,
 )
@@ -891,13 +893,13 @@ def is_col_greater(col1: str, col2: str) -> bool:
 
 
 def compute_sheet_data_dimensions(
-    data: dict[int, dict[str, Union[int, float, str, bool]]],
+    sheet_data_input: SheetDataInput,
 ) -> tuple[tuple[int, int], tuple[int, int]]:
     """
     Compute the dimensions of a sheet based on the data provided.
 
     Args:
-        data (dict[int, dict[str, Union[int, float, str, bool]]]):
+        sheet_data_input (SheetDataInput):
             The data to compute the dimensions of.
 
     Returns:
@@ -910,7 +912,7 @@ def compute_sheet_data_dimensions(
     max_col_str = None
     min_col_str = None
 
-    for key, row in data.items():
+    for key, row in sheet_data_input.data.items():
         try:
             row_num = int(key)
         except ValueError:
@@ -935,82 +937,17 @@ def compute_sheet_data_dimensions(
     return (min_row, max_row), (min_col_index, max_col_index)
 
 
-def create_sheet(data: dict[int, dict[str, Union[int, float, str, bool]]]) -> Sheet:  # noqa: C901
+def create_sheet(sheet_data_input: SheetDataInput) -> Sheet:
     """Create a Google Sheet from a dictionary of data.
 
     Args:
-        data (dict[int, dict[str, Union[int, float, str, bool]]]):
-            The data to create the sheet from.
+        sheet_data_input (SheetDataInput): The data to create the sheet from.
 
     Returns:
         Sheet: The created sheet.
     """
-    # Compute the dimensions of the sheet data.
-    (_, max_row), (min_col_index, max_col_index) = compute_sheet_data_dimensions(data)
-
-    # Create grid data that takes into account the actual column range.
-    def create_sheet_data(data_inner: dict | None) -> list[GridData] | None:  # noqa: C901
-        # Determine which rows have data.
-        row_numbers_inner = []
-        for key in data_inner:
-            try:
-                row_numbers_inner.append(int(key))
-            except ValueError:
-                continue
-        if not row_numbers_inner:
-            return None
-
-        # Group contiguous row numbers.
-        sorted_rows = sorted(set(row_numbers_inner))
-        groups = []
-        current_group = [sorted_rows[0]]
-        for r in sorted_rows[1:]:
-            if r == current_group[-1] + 1:
-                current_group.append(r)
-            else:
-                groups.append(current_group)
-                current_group = [r]
-        groups.append(current_group)
-
-        sheet_data = []
-        for group in groups:
-            rows_data = []
-            for r in group:
-                row_cells = []
-                # JSON keys are strings.
-                row_data = data_inner.get(str(r), {})
-                for col_idx in range(min_col_index, max_col_index + 1):
-                    col_letter = index_to_col(col_idx)
-                    if col_letter in row_data:
-                        cell_value = row_data[col_letter]
-                        if isinstance(cell_value, bool):
-                            cell_val = CellExtendedValue(boolValue=cell_value)
-                        elif isinstance(cell_value, (int, float)):
-                            cell_val = CellExtendedValue(numberValue=cell_value)
-                        elif isinstance(cell_value, str) and cell_value.startswith("="):
-                            # Check if the string represents a formula.
-                            cell_val = CellExtendedValue(formulaValue=cell_value)
-                        elif isinstance(cell_value, str):
-                            cell_val = CellExtendedValue(stringValue=cell_value)
-                        else:
-                            cell_val = CellExtendedValue(stringValue=str(cell_value))
-                        cell_data = CellData(userEnteredValue=cell_val)
-                    else:
-                        # Create an empty cell.
-                        cell_val = CellExtendedValue(stringValue="")
-                        cell_data = CellData(userEnteredValue=cell_val)
-                    row_cells.append(cell_data)
-                rows_data.append(RowData(values=row_cells))
-            grid_data = GridData(
-                startRow=group[0] - 1,  # 0-indexed
-                startColumn=min_col_index,  # start at the first column that has data
-                rowData=rows_data,
-            )
-            sheet_data.append(grid_data)
-
-        return sheet_data
-
-    sheet_data = create_sheet_data(data)
+    (_, max_row), (min_col_index, max_col_index) = compute_sheet_data_dimensions(sheet_data_input)
+    sheet_data = create_sheet_data(sheet_data_input, min_col_index, max_col_index)
     sheet_properties = create_sheet_properties(
         row_count=max(DEFAULT_SHEET_ROW_COUNT, max_row),
         column_count=max(DEFAULT_SHEET_COLUMN_COUNT, max_col_index + 1),
@@ -1041,3 +978,108 @@ def create_sheet_properties(
         title=title,
         gridProperties=GridProperties(rowCount=row_count, columnCount=column_count),
     )
+
+
+def group_contiguous_rows(row_numbers: list[int]) -> list[list[int]]:
+    """Groups a sorted list of row numbers into contiguous groups
+
+    A contiguous group is a list of row numbers that are consecutive integers.
+    For example, [1,2,3,5,6] is converted to [[1,2,3],[5,6]].
+
+    Args:
+        row_numbers (list[int]): The list of row numbers to group.
+
+    Returns:
+        list[list[int]]: The grouped row numbers.
+    """
+    if not row_numbers:
+        return []
+    groups = []
+    current_group = [row_numbers[0]]
+    for r in row_numbers[1:]:
+        if r == current_group[-1] + 1:
+            current_group.append(r)
+        else:
+            groups.append(current_group)
+            current_group = [r]
+    groups.append(current_group)
+    return groups
+
+
+def create_cell_data(cell_value: CellValue) -> CellData:
+    """Returns a CellData object for the provided cell value.
+
+    Args:
+        cell_value (CellValue): The value of the cell.
+
+    Returns:
+        CellData: The created cell data object.
+    """
+    if isinstance(cell_value, bool):
+        cell_val = CellExtendedValue(boolValue=cell_value)
+    elif isinstance(cell_value, (int, float)):
+        cell_val = CellExtendedValue(numberValue=cell_value)
+    elif isinstance(cell_value, str) and cell_value.startswith("="):
+        cell_val = CellExtendedValue(formulaValue=cell_value)
+    elif isinstance(cell_value, str):
+        cell_val = CellExtendedValue(stringValue=cell_value)
+
+    return CellData(userEnteredValue=cell_val)
+
+
+def create_row_data(row_data: dict[str, any], min_col_index: int, max_col_index: int) -> RowData:
+    """Constructs RowData for a single row using the provided row_data.
+
+    Args:
+        row_data (dict[str, any]): The data to create the row from.
+        min_col_index (int): The minimum column index from the SheetDataInput.
+        max_col_index (int): The maximum column index from the SheetDataInput.
+    """
+    row_cells = []
+    for col_idx in range(min_col_index, max_col_index + 1):
+        col_letter = index_to_col(col_idx)
+        if col_letter in row_data:
+            cell_data = create_cell_data(row_data[col_letter])
+        else:
+            cell_data = CellData(userEnteredValue=CellExtendedValue(stringValue=""))
+        row_cells.append(cell_data)
+    return RowData(values=row_cells)
+
+
+def create_sheet_data(
+    sheet_data_input: SheetDataInput,
+    min_col_index: int,
+    max_col_index: int,
+) -> list[GridData]:
+    """Create grid data from SheetDataInput by grouping contiguous rows and processing cells.
+
+    Args:
+        sheet_data_input (SheetDataInput): The data to create the sheet from.
+        min_col_index (int): The minimum column index from the SheetDataInput.
+        max_col_index (int): The maximum column index from the SheetDataInput.
+
+    Returns:
+        list[GridData]: The created grid data.
+    """
+    row_numbers = list(sheet_data_input.data.keys())
+    if not row_numbers:
+        return []
+
+    sorted_rows = sorted(row_numbers)
+    groups = group_contiguous_rows(sorted_rows)
+
+    sheet_data = []
+    for group in groups:
+        rows_data = []
+        for r in group:
+            current_row_data = sheet_data_input.data.get(r, {})
+            row = create_row_data(current_row_data, min_col_index, max_col_index)
+            rows_data.append(row)
+        grid_data = GridData(
+            startRow=group[0] - 1,  # convert to 0-indexed
+            startColumn=min_col_index,
+            rowData=rows_data,
+        )
+        sheet_data.append(grid_data)
+
+    return sheet_data
