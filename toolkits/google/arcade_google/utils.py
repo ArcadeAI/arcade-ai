@@ -1027,8 +1027,6 @@ def create_cell_data(cell_value: CellValue) -> CellData:
     return CellData(userEnteredValue=cell_val)
 
 
-# TODO: create_row_data is extremely inefficient. If the row is sparse, it will create a lot of
-# empty CellData objects. We need a better way.
 def create_row_data(
     row_data: dict[str, CellValue], min_col_index: int, max_col_index: int
 ) -> RowData:

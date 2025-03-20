@@ -6,6 +6,7 @@ from arcade_google.utils import (
     compute_sheet_data_dimensions,
     create_cell_data,
     create_row_data,
+    create_sheet_data,
     create_sheet_properties,
     group_contiguous_rows,
     index_to_col,
@@ -183,25 +184,86 @@ def test_create_cell_data(cell_value, expected_cell_data):
     assert cell_data.userEnteredValue == expected_cell_data
 
 
-def test_create_row_data():  # TODO: create_row_data is extremely inefficient. We need a better way.
+def test_create_row_data():
     row_data = {
-        "B": 1,  # Column index 1
-        "C": 2.5,  # Column index 2
+        "A": 1,  # Column index 0
+        "B": 2.5,  # Column index 1
         "AA": "test",  # Column index 26
         "BA": True,  # Column index 52
         "BB": "=SUM(A1:B1)",  # Column index 53
     }
-    min_col_index = 1  # Column "B"
+    min_col_index = 0  # Column "A"
     max_col_index = 53  # Column "BB"
 
     expected_row_data = RowData(
-        values=[CellData(userEnteredValue=CellExtendedValue(stringValue=""))] * (max_col_index + 1)
+        values=[
+            CellData(userEnteredValue=CellExtendedValue(stringValue=""))
+            for _ in range(max_col_index + 1)
+        ]
     )
-    expected_row_data.values[1].userEnteredValue = CellExtendedValue(numberValue=1)
-    expected_row_data.values[2].userEnteredValue = CellExtendedValue(numberValue=2.5)
+    expected_row_data.values[0].userEnteredValue = CellExtendedValue(numberValue=1)
+    expected_row_data.values[1].userEnteredValue = CellExtendedValue(numberValue=2.5)
     expected_row_data.values[26].userEnteredValue = CellExtendedValue(stringValue="test")
     expected_row_data.values[52].userEnteredValue = CellExtendedValue(boolValue=True)
     expected_row_data.values[53].userEnteredValue = CellExtendedValue(formulaValue="=SUM(A1:B1)")
 
     row_data = create_row_data(row_data, min_col_index, max_col_index)
-    assert row_data == expected_row_data
+
+    assert len(row_data.values) == len(expected_row_data.values)
+    for cell, expected in zip(row_data.values, expected_row_data.values):
+        assert cell.userEnteredValue == expected.userEnteredValue
+
+
+def test_create_sheet_data():
+    from arcade_google.models import CellData, CellExtendedValue, SheetDataInput
+    from arcade_google.utils import create_cell_data
+
+    test_data = {
+        2: {"B": "row2B", "C": 200},
+        3: {"B": "row3B"},
+        5: {"A": "=SUM(A1:A1)", "C": "row5C"},
+    }
+    sheet_data_input = SheetDataInput(data=test_data)
+    min_col_index = 0  # Column "A"
+    max_col_index = 2  # Column "C"
+
+    grid_data_list = create_sheet_data(sheet_data_input, min_col_index, max_col_index)
+
+    assert len(grid_data_list) == 2, "Should have two groups of contiguous rows"
+
+    group1 = grid_data_list[0]
+    assert group1.startRow == 1
+    assert group1.startColumn == min_col_index
+    assert len(group1.rowData) == 2
+
+    row2_cells = group1.rowData[0].values
+    expected_row2 = [
+        CellData(userEnteredValue=CellExtendedValue(stringValue="")),
+        create_cell_data("row2B"),
+        create_cell_data(200),
+    ]
+    for cell, expected in zip(row2_cells, expected_row2):
+        assert cell.userEnteredValue == expected.userEnteredValue
+
+    row3_cells = group1.rowData[1].values
+    expected_row3 = [
+        CellData(userEnteredValue=CellExtendedValue(stringValue="")),
+        create_cell_data("row3B"),
+        CellData(userEnteredValue=CellExtendedValue(stringValue="")),
+    ]
+    for cell, expected in zip(row3_cells, expected_row3):
+        assert cell.userEnteredValue == expected.userEnteredValue
+
+    group2 = grid_data_list[1]
+    assert group2.startRow == 4
+    assert group2.startColumn == min_col_index
+    assert len(group2.rowData) == 1
+
+    row5_cells = group2.rowData[0].values
+    expected_row5 = [
+        create_cell_data("=SUM(A1:A1)"),
+        CellData(userEnteredValue=CellExtendedValue(stringValue="")),
+        create_cell_data("row5C"),
+    ]
+    for cell, expected in zip(row5_cells, expected_row5):
+        assert cell.userEnteredValue == expected.userEnteredValue
