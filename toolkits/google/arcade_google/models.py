@@ -408,7 +408,7 @@ class CellExtendedValue(BaseModel):
     stringValue: Optional[str] = None
     boolValue: Optional[bool] = None
     formulaValue: Optional[str] = None
-    errorValue: Optional["CellErrorValue"] = None  # Forward reference if necessary
+    errorValue: Optional["CellErrorValue"] = None
 
     @model_validator(mode="after")
     def check_exactly_one_value(cls, instance):

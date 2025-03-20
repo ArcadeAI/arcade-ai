@@ -1027,11 +1027,15 @@ def create_cell_data(cell_value: CellValue) -> CellData:
     return CellData(userEnteredValue=cell_val)
 
 
-def create_row_data(row_data: dict[str, any], min_col_index: int, max_col_index: int) -> RowData:
+# TODO: create_row_data is extremely inefficient. If the row is sparse, it will create a lot of
+# empty CellData objects. We need a better way.
+def create_row_data(
+    row_data: dict[str, CellValue], min_col_index: int, max_col_index: int
+) -> RowData:
     """Constructs RowData for a single row using the provided row_data.
 
     Args:
-        row_data (dict[str, any]): The data to create the row from.
+        row_data (dict[str, CellValue]): The data to create the row from.
         min_col_index (int): The minimum column index from the SheetDataInput.
         max_col_index (int): The maximum column index from the SheetDataInput.
     """
