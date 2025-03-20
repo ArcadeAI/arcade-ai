@@ -48,54 +48,6 @@ Option 3:
 """
 
 
-# @tool(
-#     requires_auth=Google(
-#         scopes=["https://www.googleapis.com/auth/spreadsheets"],
-#     )
-# )
-# def create_spreadsheet2(
-#     context: ToolContext,
-#     title: Annotated[str, "The title of the new spreadsheet"] = "Untitled spreadsheet",
-#     data: Annotated[
-#         Optional[str],
-#         "The data to write to the spreadsheet. A JSON string representing a list of lists of "
-#         "values, where each inner list represents a row in the spreadsheet. An empty outer list "
-#         "represents an empty row. An empty inner list represents an empty cell. For example, "
-#         "data[22][2] would be the value of the cell in row 23, column C. "
-#         "Type hint: list[list[Union[int, float, str, bool]]]",
-#     ] = None,
-# ) -> Annotated[dict, "The created spreadsheet's id and title"]:
-#     """Create a new spreadsheet with the provided title and data
-
-#     Returns the newly created spreadsheet's id and title
-#     """
-#     return {"done": True}
-
-
-# @tool(
-#     requires_auth=Google(
-#         scopes=["https://www.googleapis.com/auth/spreadsheets"],
-#     )
-# )
-# def create_spreadsheet3(
-#     context: ToolContext,
-#     title: Annotated[str, "The title of the new spreadsheet"] = "Untitled spreadsheet",
-#     data: Annotated[
-#         Optional[str],
-#         "The data to write to the spreadsheet. A JSON string representing a dictionary, "
-#         "where each key is the column letter and row number (as a string) and each value is "
-#         "the cell value. For example, data['C23'] would be the value of the cell in column C, "
-#         "row 23. "
-#         "Type hint: dict[str, Union[int, float, str, bool]]",
-#     ] = None,
-# ) -> Annotated[dict, "The created spreadsheet's id and title"]:
-#     """Create a new spreadsheet with the provided title and data
-
-#     Returns the newly created spreadsheet's id and title
-#     """
-#     return {"done": True}
-
-
 @tool(
     requires_auth=Google(
         scopes=["https://www.googleapis.com/auth/spreadsheets"],
@@ -242,15 +194,11 @@ def create_spreadsheet(
 #     spreadsheet_name = "10JHkLnt4BXj420EjATGno4yDSOWd1xHUI2BdwQwpcSE"
 #     range_ = f"'{sheet_name}'!{start_column}{start_row}:{end_column}{end_row}"
 
-#     service = build_sheets_service(
-#         context.get_auth_token_or_empty()
-#     )
+#     service = build_sheets_service(context.get_auth_token_or_empty())
 
 #     results = (
-#         service.spreadsheets().values().get(
-#             spreadsheetId=spreadsheet_name,
-#             range=range_
-#         ).execute()
+#         service.spreadsheets().values().get(spreadsheetId=spreadsheet_name, range=range_)
+#         .execute()
 #     )
 #     return convert_to_column_dict(results)
 
@@ -278,9 +226,7 @@ def create_spreadsheet(
 #     spreadsheet_id = "1v4Gp6-a3hWdR-dc4kCUdM0D4vV1OmL7mMgV5g76jL4U"
 #     range_ = f"'{sheet_name}'!{column}{row}"
 
-#     service = build_sheets_service(
-#         context.get_auth_token_or_empty()
-#     )
+#     service = build_sheets_service(context.get_auth_token_or_empty())
 
 #     # TODO: Create enum for valueInputOption?
 #     service.spreadsheets().values().update(
@@ -341,14 +287,14 @@ def create_spreadsheet(
 #     return {"status": "success"}
 
 
-def column_index_to_letter(n):
-    """Convert a 0-indexed column number to its corresponding Google Sheets column letter."""
-    result = ""
-    while n >= 0:
-        #  65 is 'A' in ASCII & 26 is the number of letters in the alphabet
-        result = chr(n % 26 + 65) + result
-        n = n // 26 - 1
-    return result
+# def column_index_to_letter(n):
+#     """Convert a 0-indexed column number to its corresponding Google Sheets column letter."""
+#     result = ""
+#     while n >= 0:
+#         #  65 is 'A' in ASCII & 26 is the number of letters in the alphabet
+#         result = chr(n % 26 + 65) + result
+#         n = n // 26 - 1
+#     return result
 
 
 # def convert_to_a1(sheet_data: dict) -> dict:
@@ -388,115 +334,115 @@ def column_index_to_letter(n):
 #     return a1_dict
 
 
-def convert_to_column_dict(sheet_data: dict) -> dict:  # noqa: C901
-    """
-    Convert sheet data in the form of:
-    {
-        "majorDimension": "ROWS",
-        "range": "Sheet1!A1:Z1000",
-        "values": [
-            [...],
-            [...],
-            [...],
-            ...
-        ]
-    }
-    to a dictionary in the form of:
-    {
-        "A": {"1": "value", "2": "value", "13": "value"},
-        "B": {"4": "value", "5": "value", "16": "value"},
-        "X": {"1": "value", "78": "value", "23": "value"},
-    }
+# def convert_to_column_dict(sheet_data: dict) -> dict:
+#     """
+#     Convert sheet data in the form of:
+#     {
+#         "majorDimension": "ROWS",
+#         "range": "Sheet1!A1:Z1000",
+#         "values": [
+#             [...],
+#             [...],
+#             [...],
+#             ...
+#         ]
+#     }
+#     to a dictionary in the form of:
+#     {
+#         "A": {"1": "value", "2": "value", "13": "value"},
+#         "B": {"4": "value", "5": "value", "16": "value"},
+#         "X": {"1": "value", "78": "value", "23": "value"},
+#     }
 
-    The resultant dictionary is a mapping of column letters
-    to a dictionary of row numbers to cell values.
-    """
-    result = {}
-    values = sheet_data.get("values", [])
-    major_dimension = sheet_data.get("majorDimension", "ROWS")
+#     The resultant dictionary is a mapping of column letters
+#     to a dictionary of row numbers to cell values.
+#     """
+#     result = {}
+#     values = sheet_data.get("values", [])
+#     major_dimension = sheet_data.get("majorDimension", "ROWS")
 
-    if major_dimension == "ROWS":
-        for row_index, row in enumerate(values):
-            # Ensure row is a list, even if empty
-            if not isinstance(row, list):
-                continue
-            for col_index, cell in enumerate(row):
-                # Only include non-empty cells (adjust this logic if 0 or False are valid values)
-                if cell:
-                    col_letter = column_index_to_letter(col_index)
-                    if col_letter not in result:
-                        result[col_letter] = {}
-                    # Use row numbers as strings
-                    result[col_letter][str(row_index + 1)] = cell
-    elif major_dimension == "COLUMNS":
-        # If the data is column-major, each item in 'values' represents a column.
-        for col_index, col in enumerate(values):
-            if not isinstance(col, list):
-                continue
-            col_letter = column_index_to_letter(col_index)
-            for row_index, cell in enumerate(col):
-                if cell:
-                    if col_letter not in result:
-                        result[col_letter] = {}
-                    result[col_letter][str(row_index + 1)] = cell
+#     if major_dimension == "ROWS":
+#         for row_index, row in enumerate(values):
+#             # Ensure row is a list, even if empty
+#             if not isinstance(row, list):
+#                 continue
+#             for col_index, cell in enumerate(row):
+#                 # Only include non-empty cells (adjust this logic if 0 or False are valid values)
+#                 if cell:
+#                     col_letter = column_index_to_letter(col_index)
+#                     if col_letter not in result:
+#                         result[col_letter] = {}
+#                     # Use row numbers as strings
+#                     result[col_letter][str(row_index + 1)] = cell
+#     elif major_dimension == "COLUMNS":
+#         # If the data is column-major, each item in 'values' represents a column.
+#         for col_index, col in enumerate(values):
+#             if not isinstance(col, list):
+#                 continue
+#             col_letter = column_index_to_letter(col_index)
+#             for row_index, cell in enumerate(col):
+#                 if cell:
+#                     if col_letter not in result:
+#                         result[col_letter] = {}
+#                     result[col_letter][str(row_index + 1)] = cell
 
-    return {"range": sheet_data.get("range"), "values": result}
+#     return {"range": sheet_data.get("range"), "values": result}
 
 
-def convert_to_row_dct(sheet_data: dict) -> dict:  # noqa: C901
-    """
-    Convert sheet data in the form of:
-        {
-            "majorDimension": "ROWS",
-            "range": "Sheet1!A1:Z1000",
-            "values": [
-                [...],
-                [...],
-                [...],
-                ...
-            ]
-        }
-    or with "majorDimension" set as "COLUMNS", to a dictionary mapping row numbers
-    (as strings) to dictionaries mapping column letters to cell values.
+# def convert_to_row_dct(sheet_data: dict) -> dict:
+#     """
+#     Convert sheet data in the form of:
+#         {
+#             "majorDimension": "ROWS",
+#             "range": "Sheet1!A1:Z1000",
+#             "values": [
+#                 [...],
+#                 [...],
+#                 [...],
+#                 ...
+#             ]
+#         }
+#     or with "majorDimension" set as "COLUMNS", to a dictionary mapping row numbers
+#     (as strings) to dictionaries mapping column letters to cell values.
 
-    For example, a possible output is:
+#     For example, a possible output is:
 
-        {
-            "1": {"A": "value", "B": "value"},
-            "2": {"A": "value"},
-            ...
-        }
+#         {
+#             "1": {"A": "value", "B": "value"},
+#             "2": {"A": "value"},
+#             ...
+#         }
 
-    The returned dictionary also includes the original range.
-    """
-    result = {}
-    values = sheet_data.get("values", [])
-    major_dimension = sheet_data.get("majorDimension", "ROWS")
+#     The returned dictionary also includes the original range.
+#     """
+#     result = {}
+#     values = sheet_data.get("values", [])
+#     major_dimension = sheet_data.get("majorDimension", "ROWS")
 
-    if major_dimension == "ROWS":
-        for row_index, row in enumerate(values):
-            # Ensure row is a list, even if empty
-            if not isinstance(row, list):
-                continue
-            row_key = str(row_index + 1)
-            for col_index, cell in enumerate(row):
-                # Only include non-empty cells (adjust logic if 0 or False are valid values)
-                if cell:
-                    col_letter = column_index_to_letter(col_index)
-                    if row_key not in result:
-                        result[row_key] = {}
-                    result[row_key][col_letter] = cell
-    elif major_dimension == "COLUMNS":
-        # If the incoming data is column-major, each item in 'values' represents a column.
-        for col_index, col in enumerate(values):
-            if not isinstance(col, list):
-                continue
-            col_letter = column_index_to_letter(col_index)
-            for row_index, cell in enumerate(col):
-                if cell:
-                    row_key = str(row_index + 1)
-                    if row_key not in result:
-                        result[row_key] = {}
-                    result[row_key][col_letter] = cell
+#     if major_dimension == "ROWS":
+#         for row_index, row in enumerate(values):
+#             # Ensure row is a list, even if empty
+#             if not isinstance(row, list):
+#                 continue
+#             row_key = str(row_index + 1)
+#             for col_index, cell in enumerate(row):
+#                 # Only include non-empty cells (adjust logic if 0 or False are valid values)
+#                 if cell:
+#                     col_letter = column_index_to_letter(col_index)
+#                     if row_key not in result:
+#                         result[row_key] = {}
+#                     result[row_key][col_letter] = cell
+#     elif major_dimension == "COLUMNS":
+#         # If the incoming data is column-major, each item in 'values' represents a column.
+#         for col_index, col in enumerate(values):
+#             if not isinstance(col, list):
+#                 continue
+#             col_letter = column_index_to_letter(col_index)
+#             for row_index, cell in enumerate(col):
+#                 if cell:
+#                     row_key = str(row_index + 1)
+#                     if row_key not in result:
+#                         result[row_key] = {}
+#                     result[row_key][col_letter] = cell
 
-    return {"range": sheet_data.get("range"), "values": result}
+#     return {"range": sheet_data.get("range"), "values": result}

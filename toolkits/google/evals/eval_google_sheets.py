@@ -61,26 +61,26 @@ Kathy Red 31 kathyr@example.com 82 Female Miami USA 2024-01-20
 Liam Grey 36 liamg@example.com 89 Male Seattle USA 2024-01-25
 Mia Black 27 miab@example.com 80 Female Denver USA 2024-01-30
 Nate Green 30 nateg@example.com 88 Male Orlando USA 2024-02-01
--
--
--
+- (empty row)
+- (empty row)
+- (empty row)
 100, 300, 234, 399, 5039, 2345, 23526, 123, 54, 234, 54, 23, 12, 57, 1324, (the formula for sum of everything to the left)
--
--
--
--
--
--
--
--
--
--
--
--
--
--
--
--
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
+- (empty row)
 456, 234, 234, 399, 234, 1234, 23526, 123, 54, 234, 4567, 23, 12, 234, 1324, (the formula for sum of everything to the left)
 """
 
@@ -136,68 +136,3 @@ def create_spreadsheet_eval() -> EvalSuite:
     )
 
     return suite
-
-
-# @tool_eval()
-# def create_spreadsheet_eval2() -> EvalSuite:
-#     """Create an evaluation suite for Google Drive tools."""
-#     suite = EvalSuite(
-#         name="Google Drive Tools Evaluation",
-#         system_message="You are an AI assistant that can manage Google Drive documents using the provided tools.",
-#         catalog=catalog,
-#         rubric=rubric,
-#     )
-
-#     suite.add_case(
-#         name="Create a spreadsheet from complex content",
-#         user_message=f"Create a spreadsheet named 'Data' with the following content:\n{sheet_content_prompt}",
-#         expected_tool_calls=[
-#             ExpectedToolCall(
-#                 func=create_spreadsheet2,
-#                 args={
-#                     "title": "Data",
-#                     "data": sheet_content_expected2,
-#                 },
-#             )
-#         ],
-#         critics=[
-#             BinaryCritic(critic_field="title", weight=0.1),
-#             SimilarityCritic(critic_field="data", weight=0.9, similarity_threshold=0.99),
-#         ],
-#     )
-
-
-#     return suite
-
-
-# @tool_eval()
-# def create_spreadsheet_eval3() -> EvalSuite:
-#     """Create an evaluation suite for Google Drive tools."""
-#     suite = EvalSuite(
-#         name="Google Drive Tools Evaluation",
-#         system_message="You are an AI assistant that can manage Google Drive documents using the provided tools.",
-#         catalog=catalog,
-#         rubric=rubric,
-#     )
-
-#     suite.add_case(
-#         name="Create a spreadsheet from complex content",
-#         user_message=f"Create a spreadsheet named 'Data' with the following content:\n{sheet_content_prompt}",
-#         expected_tool_calls=[
-#             ExpectedToolCall(
-#                 func=create_spreadsheet3,
-#                 args={
-#                     "title": "Data",
-#                     "data": sheet_content_expected3,
-#                 },
-#             )
-#         ],
-#         critics=[
-#             BinaryCritic(critic_field="title", weight=0.1),
-#             SimilarityCritic(critic_field="data", weight=0.9, similarity_threshold=0.99),
-#         ],
-#     )
-
-#     return suite
-
-# Create a spreadsheet named 'Sparse Data' that fills the 27th column in the first row with the formula that generates the numbers 1 through 100 and then sums them. The 3782nd row should have its A, D, AAZ, ZZ, and CA columns filled with the numbers 1, 2, 3, 4, and 5, respectively, summed with its row number.
