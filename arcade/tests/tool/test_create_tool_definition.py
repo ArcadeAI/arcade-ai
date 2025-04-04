@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal, Optional, Union
 
 import pytest
 
@@ -172,8 +172,29 @@ def func_with_optional_param_with_default_value(
 
 
 @tool(desc="A function with an optional input parameter with bar syntax")
-def func_with_optional_param_with_bar_syntax(
+def func_with_optional_param_with_bar_syntax_1(
     param1: Annotated[str | None, "First param"] = None,
+):
+    pass
+
+
+@tool(desc="A function with an optional input parameter with bar syntax")
+def func_with_optional_param_with_bar_syntax_2(
+    param1: Annotated[None | str, "First param"] = None,
+):
+    pass
+
+
+@tool(desc="A function with an optional input parameter with union syntax")
+def func_with_optional_param_with_union_syntax_1(
+    param1: Annotated[Union[str, None], "First param"] = None,
+):
+    pass
+
+
+@tool(desc="A function with an optional input parameter with union syntax")
+def func_with_optional_param_with_union_syntax_2(
+    param1: Annotated[Union[None, str], "First param"] = None,
 ):
     pass
 
@@ -237,6 +258,26 @@ def func_with_annotated_return() -> Annotated[str, "Annotated return description
 
 @tool(desc="A function with an optional return type")
 def func_with_optional_return() -> Optional[str]:
+    return "maybe output"
+
+
+@tool(desc="A function with an optional return type that uses bar syntax")
+def func_with_optional_return_with_bar_syntax_1() -> str | None:
+    return "maybe output"
+
+
+@tool(desc="A function with an optional return type that uses bar syntax")
+def func_with_optional_return_with_bar_syntax_2() -> None | str:
+    return "maybe output"
+
+
+@tool(desc="A function with an optional return type that uses union syntax")
+def func_with_optional_return_with_union_syntax_1() -> Union[str, None]:
+    return "maybe output"
+
+
+@tool(desc="A function with an optional return type that uses union syntax")
+def func_with_optional_return_with_union_syntax_2() -> Union[None, str]:
     return "maybe output"
 
 
@@ -536,7 +577,7 @@ def func_with_complex_return() -> dict[str, str]:
             id="func_with_optional_param_with_default_value",
         ),
         pytest.param(
-            func_with_optional_param_with_bar_syntax,
+            func_with_optional_param_with_bar_syntax_1,
             {
                 "input": ToolInput(
                     parameters=[
@@ -554,6 +595,57 @@ def func_with_complex_return() -> dict[str, str]:
                 ),
             },
             id="func_with_optional_param_with_bar_syntax",
+        ),
+        pytest.param(
+            func_with_optional_param_with_bar_syntax_2,
+            {
+                "input": ToolInput(
+                    parameters=[
+                        InputParameter(
+                            name="param1",
+                            description="First param",
+                            inferrable=True,
+                            required=False,
+                            value_schema=ValueSchema(val_type="string", enum=None),
+                        )
+                    ]
+                ),
+            },
+            id="func_with_optional_param_with_bar_syntax_2",
+        ),
+        pytest.param(
+            func_with_optional_param_with_union_syntax_1,
+            {
+                "input": ToolInput(
+                    parameters=[
+                        InputParameter(
+                            name="param1",
+                            description="First param",
+                            inferrable=True,
+                            required=False,
+                            value_schema=ValueSchema(val_type="string", enum=None),
+                        )
+                    ]
+                ),
+            },
+            id="func_with_optional_param_with_union_syntax_1",
+        ),
+        pytest.param(
+            func_with_optional_param_with_union_syntax_2,
+            {
+                "input": ToolInput(
+                    parameters=[
+                        InputParameter(
+                            name="param1",
+                            description="First param",
+                            inferrable=True,
+                            required=False,
+                            value_schema=ValueSchema(val_type="string", enum=None),
+                        )
+                    ]
+                ),
+            },
+            id="func_with_optional_param_with_union_syntax_2",
         ),
         pytest.param(
             func_with_mixed_params,
@@ -723,6 +815,54 @@ def func_with_complex_return() -> dict[str, str]:
                 ),
             },
             id="func_with_optional_return",
+        ),
+        pytest.param(
+            func_with_optional_return_with_bar_syntax_1,
+            {
+                "input": ToolInput(parameters=[]),
+                "output": ToolOutput(
+                    value_schema=ValueSchema(val_type="string", enum=None),
+                    available_modes=["value", "error", "null"],
+                    description="No description provided.",
+                ),
+            },
+            id="func_with_optional_return_with_bar_syntax_1",
+        ),
+        pytest.param(
+            func_with_optional_return_with_bar_syntax_2,
+            {
+                "input": ToolInput(parameters=[]),
+                "output": ToolOutput(
+                    value_schema=ValueSchema(val_type="string", enum=None),
+                    available_modes=["value", "error", "null"],
+                    description="No description provided.",
+                ),
+            },
+            id="func_with_optional_return_with_bar_syntax_2",
+        ),
+        pytest.param(
+            func_with_optional_return_with_union_syntax_1,
+            {
+                "input": ToolInput(parameters=[]),
+                "output": ToolOutput(
+                    value_schema=ValueSchema(val_type="string", enum=None),
+                    available_modes=["value", "error", "null"],
+                    description="No description provided.",
+                ),
+            },
+            id="func_with_optional_return_with_union_syntax_1",
+        ),
+        pytest.param(
+            func_with_optional_return_with_union_syntax_2,
+            {
+                "input": ToolInput(parameters=[]),
+                "output": ToolOutput(
+                    value_schema=ValueSchema(val_type="string", enum=None),
+                    available_modes=["value", "error", "null"],
+                    description="No description provided.",
+                ),
+            },
+            id="func_with_optional_return_with_union_syntax_2",
         ),
         pytest.param(
             func_with_complex_return,

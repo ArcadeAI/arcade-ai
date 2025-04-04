@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Union
 
 import pytest
 
@@ -18,6 +18,16 @@ def func_with_missing_return_type():
     return "hello world"
 
 
+@tool(desc="A function with a union return type (illegal)")
+def func_with_union_return_type_1() -> Union[str, int]:
+    return "hello world"
+
+
+@tool(desc="A function with a union return type (illegal)")
+def func_with_union_return_type_2() -> str | int:
+    return "hello world"
+
+
 @tool(desc="A function with a parameter type (illegal)")
 def func_with_missing_param_type(param1):
     pass
@@ -34,7 +44,12 @@ def func_with_unsupported_param(param1: complex):
 
 
 @tool(desc="A function with a union parameter (illegal)")
-def func_with_union_param(param1: str | int):
+def func_with_union_param_1(param1: str | int):
+    pass
+
+
+@tool(desc="A function with a union parameter (illegal)")
+def func_with_union_param_2(param1: Union[str, int]):
     pass
 
 
@@ -95,9 +110,14 @@ def func_with_secret_requirement_invalid_type():
             id=func_with_unsupported_param.__name__,
         ),
         pytest.param(
-            func_with_union_param,
+            func_with_union_param_1,
             ToolDefinitionError,
-            id=func_with_union_param.__name__,
+            id=func_with_union_param_1.__name__,
+        ),
+        pytest.param(
+            func_with_union_param_2,
+            ToolDefinitionError,
+            id=func_with_union_param_2.__name__,
         ),
         pytest.param(
             func_with_multiple_context_params,
@@ -118,6 +138,16 @@ def func_with_secret_requirement_invalid_type():
             func_with_secret_requirement_invalid_type,
             ToolDefinitionError,
             id=func_with_secret_requirement_invalid_type.__name__,
+        ),
+        pytest.param(
+            func_with_union_return_type_1,
+            ToolDefinitionError,
+            id=func_with_union_return_type_1.__name__,
+        ),
+        pytest.param(
+            func_with_union_return_type_2,
+            ToolDefinitionError,
+            id=func_with_union_return_type_2.__name__,
         ),
     ],
 )

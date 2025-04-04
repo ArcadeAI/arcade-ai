@@ -48,6 +48,7 @@ from arcade.core.toolkit import Toolkit
 from arcade.core.utils import (
     does_function_return_value,
     first_or_none,
+    is_strict_optional,
     is_string_literal,
     is_union,
     snake_to_pascal_case,
@@ -481,10 +482,10 @@ def create_output_definition(func: Callable) -> ToolOutput:
         return_type = return_type.__origin__
 
     # Unwrap Optional types
-    is_optional = False
-    if get_origin(return_type) is Union and type(None) in get_args(return_type):
+    # Both Optional[T] and T | None are supported
+    is_optional = is_strict_optional(return_type)
+    if is_optional:
         return_type = next(arg for arg in get_args(return_type) if arg is not type(None))
-        is_optional = True
 
     wire_type_info = get_wire_type_info(return_type)
 
@@ -659,14 +660,9 @@ def extract_python_param_info(param: inspect.Parameter) -> ParamInfo:
 
     # Handle optional types
     # Both Optional[T] and T | None are supported
-    is_optional = False
-    if (
-        is_union(field_type)
-        and len(get_args(field_type)) == 2
-        and type(None) in get_args(field_type)
-    ):
+    is_optional = is_strict_optional(field_type)
+    if is_optional:
         field_type = next(arg for arg in get_args(field_type) if arg is not type(None))
-        is_optional = True
 
     # Union types are not currently supported
     # (other than optional, which is handled above)
@@ -703,10 +699,10 @@ def extract_pydantic_param_info(param: inspect.Parameter) -> ParamInfo:
     field_type = original_type
 
     # Unwrap Optional types
-    is_optional = False
-    if get_origin(field_type) is Union and type(None) in get_args(field_type):
+    # Both Optional[T] and T | None are supported
+    is_optional = is_strict_optional(field_type)
+    if is_optional:
         field_type = next(arg for arg in get_args(field_type) if arg is not type(None))
-        is_optional = True
 
     return ParamInfo(
         name=param.name,
@@ -732,7 +728,6 @@ def get_wire_type(
         float: "number",
         dict: "json",
     }
-
     outer_type_mapping: dict[type, WireType] = {
         list: "array",
         dict: "json",
