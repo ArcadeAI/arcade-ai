@@ -57,6 +57,7 @@ cli = typer.Typer(
     pretty_exceptions_enable=False,
     pretty_exceptions_show_locals=False,
     pretty_exceptions_short=True,
+    rich_markup_mode="markdown",
 )
 
 
