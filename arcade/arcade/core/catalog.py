@@ -39,6 +39,8 @@ from arcade.core.schema import (
     ToolDefinition,
     ToolInput,
     ToolkitDefinition,
+    ToolMetadataKey,
+    ToolMetadataRequirement,
     ToolOutput,
     ToolRequirements,
     ToolSecretRequirement,
@@ -348,7 +350,7 @@ class ToolCatalog(BaseModel):
         return len(self._tools)
 
     @staticmethod
-    def create_tool_definition(
+    def create_tool_definition(  # noqa: C901
         tool: Callable,
         toolkit_name: str,
         toolkit_version: Optional[str] = None,
@@ -395,6 +397,29 @@ class ToolCatalog(BaseModel):
                     f"Secrets must have a non-empty key (error in tool {raw_tool_name})."
                 )
 
+        metadata_requirement = getattr(tool, "__tool_requires_metadata__", None)
+        if isinstance(metadata_requirement, list):
+            for metadata in metadata_requirement:
+                if not isinstance(metadata, str):
+                    raise ToolDefinitionError(
+                        f"Metadata must be strings (error in tool {raw_tool_name})."
+                    )
+                if ToolMetadataKey.requires_auth(metadata) and auth_requirement is None:
+                    raise ToolDefinitionError(
+                        f"Tool {raw_tool_name} declares metadata key '{metadata}', "
+                        "which requires that the tool has an auth requirement, "
+                        "but no auth requirement was provided. Please specify an auth requirement."
+                    )
+
+            metadata_requirement = to_tool_metadata_requirements(metadata_requirement)
+            if any(
+                metadata.key is None or metadata.key.strip() == ""
+                for metadata in metadata_requirement
+            ):
+                raise ToolDefinitionError(
+                    f"Metadata must have a non-empty key (error in tool {raw_tool_name})."
+                )
+
         toolkit_definition = ToolkitDefinition(
             name=snake_to_pascal_case(toolkit_name),
             description=toolkit_desc,
@@ -415,6 +440,7 @@ class ToolCatalog(BaseModel):
             requirements=ToolRequirements(
                 authorization=auth_requirement,
                 secrets=secrets_requirement,
+                metadata=metadata_requirement,
             ),
             deprecation_message=deprecation_message,
         )
@@ -832,3 +858,11 @@ def to_tool_secret_requirements(
     # Iterate through the list, de-dupe case-insensitively, and convert each string to a ToolSecretRequirement
     unique_secrets = {name.lower(): name.lower() for name in secrets_requirement}.values()
     return [ToolSecretRequirement(key=name) for name in unique_secrets]
+
+
+def to_tool_metadata_requirements(
+    metadata_requirement: list[str],
+) -> list[ToolMetadataRequirement]:
+    # Iterate through the list, de-dupe case-insensitively, and convert each string to a ToolMetadataRequirement
+    unique_metadata = {name.lower(): name.lower() for name in metadata_requirement}.values()
+    return [ToolMetadataRequirement(key=name) for name in unique_metadata]
