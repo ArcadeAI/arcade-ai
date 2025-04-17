@@ -8,6 +8,7 @@ authors = ["Arcade <dev@arcade.dev>"]
 python = "^3.10"
 arcade-ai = "^1.0.5"
 msgraph-sdk = "^1.28.0"
+beautifulsoup4 = "^4.10.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^8.3.0"
