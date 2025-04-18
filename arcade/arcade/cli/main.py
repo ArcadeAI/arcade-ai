@@ -609,6 +609,62 @@ def deploy(
                 raise typer.Exit(code=1)
 
 
+@cli.command(help="Open the Arcade Dashboard in a web browser", rich_help_panel="User")
+def dashboard(
+    host: str = typer.Option(
+        PROD_ENGINE_HOST,
+        "-h",
+        "--host",
+        help="The Arcade Engine host that serves the dashboard.",
+    ),
+    port: Optional[int] = typer.Option(
+        None,
+        "-p",
+        "--port",
+        help="The port of the Arcade Engine.",
+    ),
+    local: bool = typer.Option(
+        False,
+        "--local",
+        "-l",
+        help="Open the local dashboard instead of the default remote dashboard.",
+    ),
+    force_tls: bool = typer.Option(
+        False,
+        "--tls",
+        help="Whether to force TLS for the connection to the Arcade Engine.",
+    ),
+    force_no_tls: bool = typer.Option(
+        False,
+        "--no-tls",
+        help="Whether to disable TLS for the connection to the Arcade Engine.",
+    ),
+) -> None:
+    """Opens the Arcade Dashboard in a web browser.
+
+    The Dashboard is a web-based Arcade user interface that is served by the Arcade Engine.
+    """
+    if local:
+        host = "localhost"
+
+    # Construct base URL (for both health check and dashboard)
+    base_url = compute_base_url(force_tls, force_no_tls, host, port)
+    dashboard_url = f"{base_url}/dashboard"
+
+    # Try to hit /health endpoint on engine and warn if it is down
+    config = validate_and_get_config()
+    with Arcade(api_key=config.api.key, base_url=base_url) as client:
+        log_engine_health(client)
+
+    # Open the dashboard in a browser
+    console.print(f"Opening Arcade Dashboard at {dashboard_url}")
+    if not webbrowser.open(dashboard_url):
+        console.print(
+            f"If a browser doesn't open automatically, copy this URL and paste it into your browser: {dashboard_url}",
+            style="dim",
+        )
+
+
 @cli.callback()
 def main_callback(
     ctx: typer.Context,
@@ -621,7 +677,13 @@ def main_callback(
         help="Print version and exit.",
     ),
 ) -> None:
-    excluded_commands = {login.__name__, logout.__name__, serve.__name__, workerup.__name__}
+    excluded_commands = {
+        login.__name__,
+        logout.__name__,
+        serve.__name__,
+        workerup.__name__,
+        dashboard.__name__,
+    }
     if ctx.invoked_subcommand in excluded_commands:
         return
 
