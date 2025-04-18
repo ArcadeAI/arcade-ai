@@ -1,45 +1,16 @@
-# import json
-# from typing import Annotated
-
-# from arcade.sdk import ToolContext, tool
-# from arcade.sdk.auth import Microsoft
-# from kiota_abstractions.base_request_configuration import RequestConfiguration
-# from msgraph import GraphServiceClient
-# from msgraph.generated.users.item.messages.messages_request_builder import MessagesRequestBuilder
-
-
-# @tool(requires_auth=Microsoft(scopes=["Mail.ReadBasic"]))
-# async def list_emails(
-#     context: ToolContext,
-#     limit: Annotated[int, "The number of messages to return"] = 10,
-# ) -> Annotated[dict, "A dictionary containing a list of message details"]:
-#     """
-#     List emails from the user's inbox.
-#     """
-#     query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
-#         select=["sender", "subject"],
-#     )
-
-#     request_configuration = RequestConfiguration(
-#         query_parameters=query_params,
-#     )
-#     async_token_credential = AsyncTokenCredential(context.get_auth_token_or_empty())
-#     graph_client = GraphServiceClient(async_token_credential)
-#     result = await graph_client.me.messages.get(request_configuration=request_configuration)
-#     return json.dumps(result)
-
-
 import datetime
 from typing import Annotated
 
 from arcade.sdk import ToolContext, tool
 from arcade.sdk.auth import Microsoft
 from azure.core.credentials import AccessToken, TokenCredential
-from bs4 import BeautifulSoup
 from msgraph import GraphServiceClient
 from msgraph.generated.users.item.mail_folders.item.messages.messages_request_builder import (
     MessagesRequestBuilder,
 )
+
+from arcade_outlook_mail.constants import DEFAULT_SCOPE
+from arcade_outlook_mail.message import Message
 
 
 class StaticTokenCredential(TokenCredential):
@@ -47,55 +18,68 @@ class StaticTokenCredential(TokenCredential):
         self._token = token
 
     def get_token(self, *scopes, **kwargs) -> AccessToken:
-        # Return the token with a one hour expiry timestamp
-        expires_on = int(datetime.datetime.utcnow().timestamp()) + 3600
+        expires_on = int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + 3600
         return AccessToken(self._token, expires_on)
 
 
 @tool(requires_auth=Microsoft(scopes=["Mail.Read"]))
 async def list_emails(
     context: ToolContext,
-    limit: Annotated[int, "The number of messages to return"] = 10,
+    limit: Annotated[int, "The number of messages to return. Max is 100. Defaults to 5."] = 5,
+    pagination_token: Annotated[
+        str | None, "The pagination token to continue a previous request"
+    ] = None,
 ) -> Annotated[dict, "A dictionary containing a list of message details"]:
     """
     List emails from the user's inbox.
     """
+    limit = max(1, min(limit, 100))  # limit must be between 1 and 100
     token_credential = StaticTokenCredential(context.get_auth_token_or_empty())
-    scopes = ["https://graph.microsoft.com/.default"]
+    scopes = [DEFAULT_SCOPE]
     client = GraphServiceClient(token_credential, scopes=scopes)
     query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
         count=True,
-        select=["subject", "from", "receivedDateTime", "bccRecipients", "body"],
+        select=[
+            "bccRecipients",
+            "body",
+            "ccRecipients",
+            "conversationId",
+            "conversationIndex",
+            "flag",
+            "from",
+            "hasAttachments",
+            "importance",
+            "isRead",
+            "receivedDateTime",
+            "replyTo",
+            "subject",
+            "toRecipients",
+            "webLink",
+        ],
         orderby=["receivedDateTime DESC"],
+        top=limit,
     )
 
     request_config = MessagesRequestBuilder.MessagesRequestBuilderGetRequestConfiguration(
         query_parameters=query_params,
     )
 
-    response = await client.me.mail_folders.by_mail_folder_id("inbox").messages.get(
-        request_configuration=request_config,
-    )
-    messages = []
-    for message in response.value:
-        mime_body = message.body.content if message.body and message.body.content else ""
-        body = ""
-        if mime_body:
-            soup = BeautifulSoup(mime_body, "html.parser")
-            body = soup.get_text(separator=" ")
-            # TODO: Clean text
+    # Microsoft Graph Python SDK does not support pagination (as of 2025-04-17),
+    # so we use raw URL for pagination if a pagination token is provided
+    if pagination_token:
+        response = (
+            await client.me.mail_folders.by_mail_folder_id("inbox")
+            .messages.with_url(pagination_token)
+            .get()
+        )
+    else:
+        response = await client.me.mail_folders.by_mail_folder_id("inbox").messages.get(
+            request_configuration=request_config,
+        )
+    messages = [Message.from_sdk(msg).to_dict() for msg in response.value or []]
+    pagination_token = response.odata_next_link
 
-        messages.append({
-            "subject": message.subject,
-            "from_email_address": message.from_.email_address.address,
-            "from_name": message.from_.email_address.name,
-            "bcc_recipients": [
-                recipient.email_address.address
-                for recipient in message.bcc_recipients
-                if message.bcc_recipients
-            ],
-            "received_date_time": message.received_date_time,
-            "body": body,
-        })
-
-    return {"messages": messages}
+    return {
+        "messages": messages,
+        "pagination_token": pagination_token,
+    }
