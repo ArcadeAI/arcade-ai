@@ -1,0 +1,228 @@
+from typing import Annotated
+
+from arcade.sdk import ToolContext, tool
+from arcade.sdk.auth import Atlassian
+from arcade.sdk.errors import ToolExecutionError
+
+from arcade_confluence.client import ConfluenceClientV2
+from arcade_confluence.enums import BodyFormat, PageSortOrder, PageUpdateMode
+from arcade_confluence.utils import remove_none_values
+
+
+@tool(
+    requires_auth=Atlassian(
+        scopes=["read:page:confluence", "write:page:confluence"],
+    )
+)
+async def create_page(
+    context: ToolContext,
+    space_id: Annotated[str, "The ID of the space to create the page in"],
+    title: Annotated[str, "The title of the page"],
+    content: Annotated[
+        str, "The content of the page. Can be plain text or html. Markdown is not supported."
+    ],
+    parent_id: Annotated[  # TODO: Accept parent name? Key? Would have to handle name collisions?
+        str | None,
+        "The ID of the parent. If not provided, the page will be created at the root of the space.",
+    ] = None,
+    is_private: Annotated[
+        bool,
+        "If true, then only the user who creates this page will be able to see it. "
+        "Defaults to False",
+    ] = False,
+    is_draft: Annotated[
+        bool,
+        "If true, then the page will be created as a draft. Defaults to False",
+    ] = False,
+) -> Annotated[dict, "The page"]:
+    """Create a new page at the root of the given space."""
+    client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    parent_id = parent_id or (await client.get_space_homepage(space_id)).get("id")
+    params = remove_none_values({
+        "root-level": False,
+        "private": is_private,
+    })
+
+    body = remove_none_values({
+        "spaceId": space_id,
+        "status": "draft" if is_draft else None,
+        "parentId": parent_id,
+        "title": title,
+        "body": {
+            "storage": {
+                "value": content,
+                "representation": "storage",  # TODO: this isn't exactly html. Confluence says 'XHTML', but even they are hesitant to say that  # noqa: E501
+            }
+        },
+    })
+    page = await client.post("pages", params=params, json=body)
+    return client.transform_page_response(page)
+
+
+@tool(
+    requires_auth=Atlassian(
+        scopes=["read:page:confluence", "write:page:confluence"],
+    )
+)
+async def update_page_content(
+    context: ToolContext,
+    page_id: Annotated[str, "The ID of the page to update"],
+    content: Annotated[
+        str, "The content of the page. Can be plain text or html. Markdown is not supported."
+    ],
+    update_mode: Annotated[
+        PageUpdateMode,
+        "The mode of update. Defaults to 'append'.",
+    ] = PageUpdateMode.APPEND,
+) -> Annotated[dict, "The page"]:
+    """Update a page's content."""
+    # Get the page to update
+    client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    page = await get_page(context, page_id, content_format=BodyFormat.STORAGE)
+    status = page.get("page", {}).get("status", "current")
+    title = page.get("page", {}).get("title", "Untitled page")
+    body = page.get("page", {}).get("body", {})
+    old_content = body[BodyFormat.STORAGE].get("value", "")
+    old_version_number = page.get("page", {}).get("version", {}).get("number", 0)
+
+    # Update the page content
+    payload = client.prepare_update_page_content_payload(
+        content=content,
+        update_mode=update_mode,
+        old_content=old_content,
+        page_id=page_id,
+        status=status,
+        title=title,
+        body_representation=BodyFormat.STORAGE,
+        old_version_number=old_version_number,
+    )
+    updated_page = await client.put(f"pages/{page_id}", json=payload)
+
+    return client.transform_page_response(updated_page)
+
+
+@tool(
+    requires_auth=Atlassian(
+        scopes=["read:page:confluence", "write:page:confluence"],
+    )
+)
+async def rename_page(
+    context: ToolContext,
+    page_id: Annotated[str, "The ID of the page to rename"],
+    title: Annotated[str, "The title of the page"],
+) -> Annotated[dict, "The page"]:
+    """Rename a page by changing its title."""
+    # Get the page to rename
+    client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    page = await get_page(context, page_id, content_format=BodyFormat.STORAGE)
+    status = page.get("page", {}).get("status", "current")
+    content = page.get("page", {}).get("body", {}).get(BodyFormat.STORAGE, {}).get("value", "")
+    old_version_number = page.get("page", {}).get("version", {}).get("number", 0)
+
+    # Rename the page
+    payload = client.prepare_update_page_payload(
+        page_id=page_id,
+        status=status,
+        title=title,
+        body_representation=BodyFormat.STORAGE,
+        body_value=content,
+        version_number=old_version_number + 1,
+        version_message="Rename the page",
+    )
+    updated_page = await client.put(f"pages/{page_id}", json=payload)
+
+    return client.transform_page_response(updated_page)
+
+
+@tool(
+    requires_auth=Atlassian(
+        scopes=["read:page:confluence"],
+    )
+)
+async def get_page(
+    context: ToolContext,
+    page_id: Annotated[
+        str | None, "The ID of the page to get. Required if page_title is not provided"
+    ] = None,
+    page_title: Annotated[
+        str | None,
+        "The title of the page to get. Must be an exact match. "
+        "If the provided title matches more than one page, then the first one will be returned. "
+        "Required if page_id is not provided",
+    ] = None,
+    content_format: Annotated[
+        BodyFormat, "The format of the page content. Defaults to HTML"
+    ] = BodyFormat.HTML,
+) -> Annotated[dict, "The page"]:
+    """Retrieve a single page's content by its ID or title.
+    For multiple pages, use `get_multiple_pages_by_id`.
+
+    If the provided title matches more than one page, then the first one will be returned.
+    """
+    client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    if page_id:
+        return await client.get_page_by_id(page_id, content_format)
+    elif page_title:
+        return await client.get_page_by_title(page_title, content_format)
+    raise ToolExecutionError(message="Either page_id or page_title must be provided")
+
+
+@tool(
+    requires_auth=Atlassian(
+        scopes=["read:page:confluence"],
+    )
+)
+async def get_multiple_pages_by_id(
+    context: ToolContext,
+    page_ids: Annotated[
+        list[int], "The IDs of the pages to get. Maximum of 250 page ids supported."
+    ],
+) -> Annotated[dict, "The pages"]:
+    """Get the content of multiple pages by their ID in a single request"""
+    if not page_ids:
+        raise ToolExecutionError(message="The 'page_ids' parameter must be non-empty")
+    page_ids = page_ids[:250]
+
+    client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    pages = await client.get(
+        "pages", params={"id": page_ids, "body-format": BodyFormat.STORAGE.to_api_value()}
+    )
+    return client.transform_get_multiple_pages_response(pages)
+
+
+@tool(
+    requires_auth=Atlassian(
+        scopes=["read:page:confluence"],
+    )
+)
+async def list_pages(
+    context: ToolContext,
+    space_ids: Annotated[
+        list[int] | None,
+        "Restrict the response to only include pages in these spaces. "
+        "If not provided, then no restriction is applied. "
+        "Maximum of 100 space ids supported.",
+    ] = None,
+    sort_by: Annotated[
+        PageSortOrder,
+        "The order of the pages to sort by. Defaults to created-date-newest-to-oldest",
+    ] = PageSortOrder.CREATED_DATE_DESCENDING,
+    limit: Annotated[int, "The maximum number of pages to return. Defaults to 25. Max is 250"] = 25,
+    pagination_token: Annotated[
+        str | None,
+        "The pagination token to use for the next page of results",
+    ] = None,
+) -> Annotated[dict, "The pages"]:
+    """Get the content of multiple pages by their ID"""
+    space_ids = space_ids[:100] if space_ids else None
+    limit = max(1, min(limit, 250))
+    client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    params = remove_none_values({
+        "space-id": space_ids,
+        "sort": sort_by.to_api_value(),
+        "body-format": BodyFormat.STORAGE.to_api_value(),
+        "limit": limit,
+        "cursor": pagination_token,
+    })
+    pages = await client.get("pages", params=params)
+    return client.transform_list_pages_response(pages)
