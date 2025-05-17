@@ -6,7 +6,12 @@ import httpx
 from arcade.sdk.errors import ToolExecutionError
 
 from arcade_confluence.enums import BodyFormat, PageUpdateMode
-from arcade_confluence.utils import remove_none_values, split_by_space
+from arcade_confluence.utils import (
+    build_child_url,
+    build_hierarchy,
+    remove_none_values,
+    split_by_space,
+)
 
 
 class ConfluenceAPIVersion(str, Enum):
@@ -38,7 +43,7 @@ class ConfluenceClient:
         if len(resp_json) == 0:
             raise ToolExecutionError(message="No workspaces found for the authenticated user.")
 
-        return resp_json[0].get("id")
+        return resp_json[0].get("id")  # type: ignore[no-any-return]
 
     async def request(self, method: str, path: str, **kwargs: Any) -> Any:
         headers = {
@@ -70,7 +75,7 @@ class ConfluenceClientV1(ConfluenceClient):
         super().__init__(token, api_version=ConfluenceAPIVersion.V1)
 
     def construct_cql(
-        self, terms: list[str], phrases: list[str], enable_fuzzy: bool = False
+        self, terms: list[str] | None, phrases: list[str] | None, enable_fuzzy: bool = False
     ) -> str:
         """Construct a CQL query from a list of terms and phrases.
 
@@ -204,17 +209,17 @@ class ConfluenceClientV2(ConfluenceClient):
         pages = [self._transform_links(page, base_url) for page in response["results"]]
         return {"pages": pages}
 
-    def transform_space_response(self, response: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    def transform_space_response(
+        self, response: dict[str, Any], base_url: str | None = None
+    ) -> dict[str, dict[str, Any]]:
         """Transform API responses that return a space object."""
-        return {"space": self._transform_links(response)}
+        return {"space": self._transform_links(response, base_url)}
 
     def transform_page_response(self, response: dict[str, Any]) -> dict[str, dict[str, Any]]:
         """Transform API responses that return a page object."""
         return {"page": self._transform_links(response)}
 
-    def transform_get_attachments_response(
-        self, response: dict[str, Any]
-    ) -> dict[str, list[dict[str, Any]]]:
+    def transform_get_attachments_response(self, response: dict[str, Any]) -> dict[str, Any]:
         """Transform the response from the GET /pages/{id}/attachments endpoint."""
         pagination_token = parse_qs(urlparse(response.get("_links", {}).get("next", "")).query).get(
             "cursor", [None]
@@ -291,10 +296,10 @@ class ConfluenceClientV2(ConfluenceClient):
         updated_content = ""
         updated_message = ""
         if update_mode == PageUpdateMode.APPEND:
-            updated_content = f"{old_content}\n{content}"
+            updated_content = f"{old_content}<br/>{content}"
             updated_message = "Append content to the page"
         elif update_mode == PageUpdateMode.PREPEND:
-            updated_content = f"{content}\n{old_content}"
+            updated_content = f"{content}<br/>{old_content}"
             updated_message = "Prepend content to the page"
         elif update_mode == PageUpdateMode.REPLACE:
             updated_content = content
@@ -310,7 +315,7 @@ class ConfluenceClientV2(ConfluenceClient):
         )
         return payload
 
-    async def get_root_pages_in_space(self, space_id: str) -> list[dict[str, Any]]:
+    async def get_root_pages_in_space(self, space_id: str) -> dict[str, Any]:
         """
         Get the root pages in a space.
 
@@ -405,7 +410,124 @@ class ConfluenceClientV2(ConfluenceClient):
             The space object
         """
         response = await self.get("spaces", params={"keys": [space_key]})
+        base_url = response.get("_links", {}).get("base", "")
         spaces = response.get("results", [])
         if not spaces:
             raise ToolExecutionError(message=f"No space found with key: '{space_key}'")
-        return self.transform_space_response(spaces[0])
+        return self.transform_space_response(spaces[0], base_url=base_url)
+
+    async def get_space(self, space_identifier: str) -> dict[str, Any]:
+        """Get a space from its identifier.
+
+        Requires Confluence scope 'read:space:confluence'
+
+        Args:
+            space_identifier: The identifier of the space to get. Can be a space's ID or key.
+        """
+        return (
+            await self.get_space_by_id(space_identifier)
+            if space_identifier.isdigit()
+            else await self.get_space_by_key(space_identifier)
+        )
+
+    async def get_page_id(self, page_identifier: str) -> str:
+        """Get the ID of a page from its identifier.
+
+        Args:
+            page_identifier: The identifier of the page to get. Can be a page's ID or title.
+
+        Returns:
+            The ID of the page
+        """
+        if page_identifier.isdigit():
+            page_id = page_identifier
+        else:
+            page = await self.get_page_by_title(page_identifier)
+            page_id = page["page"]["id"]
+        return page_id
+
+    async def get_space_id(self, space_identifier: str) -> str:
+        """Get the ID of a space from its identifier.
+
+        Args:
+            space_identifier: The identifier of the space to get. Can be a space's ID or title.
+        """
+        if space_identifier.isdigit():
+            space_id = space_identifier
+        else:
+            space = await self.get_space_by_key(space_identifier)
+            space_id = space["space"]["id"]
+        return space_id
+
+    def create_space_tree(self, space: dict) -> dict:
+        """Create the initial tree structure for a space.
+
+        Args:
+            space: The space object from the API
+
+        Returns:
+            A dictionary representing the root of the space hierarchy tree without any children
+        """
+        return {
+            "key": space["space"]["key"],
+            "id": space["space"]["id"],
+            "type": "space",
+            "url": space["space"]["url"],
+            "children": [],
+        }
+
+    def convert_root_pages_to_tree_nodes(self, pages: list) -> list:
+        """Convert root pages of a space to tree nodes.
+
+        Args:
+            pages: List of page objects from the API
+
+        Returns:
+            A list of tree nodes representing the root pages
+        """
+        return [
+            {
+                "title": page["title"],
+                "id": page["id"],
+                "type": "page",
+                "url": page["url"],
+                "children": [],
+            }
+            for page in pages
+        ]
+
+    async def process_page_descendants(self, root_children: list, base_url: str) -> None:
+        """Process descendants for each page and build the hierarchy.
+
+        Args:
+            root_children: The root children of the space
+            base_url: The base URL for the Confluence space
+
+        Returns:
+            None (modifies root_children in place)
+        """
+        descendent_params = {"limit": 250, "depth": 5}
+
+        for i, child in enumerate(root_children):
+            page_id = child["id"]
+            descendants = await self.get(f"pages/{page_id}/descendants", params=descendent_params)
+
+            # Transform descendants into our desired format
+            transformed_children = []
+            for descendant in descendants["results"]:
+                transformed_child = {
+                    "title": descendant["title"],
+                    "id": descendant["id"],
+                    "type": descendant["type"],
+                    "parent_id": page_id
+                    if descendant.get("parentId") is None
+                    else descendant.get("parentId"),
+                    "parent_type": descendant.get("parentType", "TODO"),
+                    "url": build_child_url(base_url, descendant),
+                    "children": [],
+                    "status": descendant.get("status"),
+                }
+                transformed_children.append(transformed_child)
+
+            # Build the hierarchy for the current root page
+            build_hierarchy(transformed_children, page_id, root_children[i])

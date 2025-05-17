@@ -45,7 +45,7 @@ async def list_attachments(
 )
 async def get_attachments_for_page(
     context: ToolContext,
-    page_id: Annotated[int, "The ID of the page to get attachments for"],
+    page_identifier: Annotated[str, "The ID or title of the page to get attachments for"],
     limit: Annotated[
         int, "The maximum number of attachments to return. Defaults to 25. Max is 250"
     ] = 25,
@@ -54,8 +54,13 @@ async def get_attachments_for_page(
         "The pagination token to use for the next page of results",
     ] = None,
 ) -> Annotated[dict, "The attachments"]:
-    """Get attachments for a page"""
+    """Get attachments for a page by its ID or title.
+
+    If a page title is provided, then the first page with an exact matching title will be returned.
+    """
     client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    page_id = await client.get_page_id(page_identifier)
+
     params = remove_none_values({
         "limit": max(1, min(limit, 250)),
         "cursor": pagination_token,

@@ -10,12 +10,12 @@ class BodyFormat(str, Enum):
     # TODO: Add option for plain text.
     # will need custom logic to convert to plain text since this is not a confluence body format
 
-    def to_api_value(self) -> str | None:
+    def to_api_value(self) -> str:
         mapping = {
             BodyFormat.HTML: "export_view",
             BodyFormat.STORAGE: "storage",
         }
-        return mapping.get(self)
+        return mapping.get(self, BodyFormat.STORAGE.value)
 
 
 class PageUpdateMode(str, Enum):
@@ -49,7 +49,7 @@ class PageSortOrder(str, Enum):
             PageSortOrder.MODIFIED_DATE_ASCENDING: "modified-date",
             PageSortOrder.MODIFIED_DATE_DESCENDING: "-modified-date",
         }
-        return mapping.get(self)
+        return mapping.get(self, PageSortOrder.CREATED_DATE_DESCENDING.value)
 
 
 class AttachmentSortOrder(str, Enum):
@@ -67,4 +67,4 @@ class AttachmentSortOrder(str, Enum):
             AttachmentSortOrder.MODIFIED_DATE_ASCENDING: "modified-date",
             AttachmentSortOrder.MODIFIED_DATE_DESCENDING: "-modified-date",
         }
-        return mapping.get(self)
+        return mapping.get(self, AttachmentSortOrder.CREATED_DATE_DESCENDING.value)

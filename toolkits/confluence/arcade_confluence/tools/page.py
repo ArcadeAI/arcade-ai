@@ -6,7 +6,7 @@ from arcade.sdk.errors import ToolExecutionError
 
 from arcade_confluence.client import ConfluenceClientV2
 from arcade_confluence.enums import BodyFormat, PageSortOrder, PageUpdateMode
-from arcade_confluence.utils import remove_none_values
+from arcade_confluence.utils import remove_none_values, validate_ids
 
 
 @tool(
@@ -16,12 +16,12 @@ from arcade_confluence.utils import remove_none_values
 )
 async def create_page(
     context: ToolContext,
-    space_id: Annotated[str, "The ID of the space to create the page in"],
+    space_identifier: Annotated[str, "The ID or title of the space to create the page in"],
     title: Annotated[str, "The title of the page"],
     content: Annotated[
         str, "The content of the page. Can be plain text or html. Markdown is not supported."
     ],
-    parent_id: Annotated[  # TODO: Accept parent name? Key? Would have to handle name collisions?
+    parent_id: Annotated[
         str | None,
         "The ID of the parent. If not provided, the page will be created at the root of the space.",
     ] = None,
@@ -37,6 +37,8 @@ async def create_page(
 ) -> Annotated[dict, "The page"]:
     """Create a new page at the root of the given space."""
     client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    space_id = await client.get_space_id(space_identifier)
+
     parent_id = parent_id or (await client.get_space_homepage(space_id)).get("id")
     params = remove_none_values({
         "root-level": False,
@@ -66,9 +68,9 @@ async def create_page(
 )
 async def update_page_content(
     context: ToolContext,
-    page_id: Annotated[str, "The ID of the page to update"],
+    page_identifier: Annotated[str, "The ID or title of the page to update"],
     content: Annotated[
-        str, "The content of the page. Can be plain text or html. Markdown is not supported."
+        str, "The content of the page. Can be plain text. Markdown and HTML are not supported."
     ],
     update_mode: Annotated[
         PageUpdateMode,
@@ -78,6 +80,8 @@ async def update_page_content(
     """Update a page's content."""
     # Get the page to update
     client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    page_id = await client.get_page_id(page_identifier)
+
     page = await get_page(context, page_id, content_format=BodyFormat.STORAGE)
     status = page.get("page", {}).get("status", "current")
     title = page.get("page", {}).get("title", "Untitled page")
@@ -108,12 +112,14 @@ async def update_page_content(
 )
 async def rename_page(
     context: ToolContext,
-    page_id: Annotated[str, "The ID of the page to rename"],
+    page_identifier: Annotated[str, "The ID or title of the page to rename"],
     title: Annotated[str, "The title of the page"],
 ) -> Annotated[dict, "The page"]:
     """Rename a page by changing its title."""
     # Get the page to rename
     client = ConfluenceClientV2(context.get_auth_token_or_empty())
+    page_id = await client.get_page_id(page_identifier)
+
     page = await get_page(context, page_id, content_format=BodyFormat.STORAGE)
     status = page.get("page", {}).get("status", "current")
     content = page.get("page", {}).get("body", {}).get(BodyFormat.STORAGE, {}).get("value", "")
@@ -141,30 +147,24 @@ async def rename_page(
 )
 async def get_page(
     context: ToolContext,
-    page_id: Annotated[
-        str | None, "The ID of the page to get. Required if page_title is not provided"
-    ] = None,
-    page_title: Annotated[
-        str | None,
-        "The title of the page to get. Must be an exact match. "
-        "If the provided title matches more than one page, then the first one will be returned. "
-        "Required if page_id is not provided",
-    ] = None,
+    page_identifier: Annotated[str, "Can be a page's ID or title."],
     content_format: Annotated[
         BodyFormat, "The format of the page content. Defaults to HTML"
     ] = BodyFormat.HTML,
 ) -> Annotated[dict, "The page"]:
-    """Retrieve a single page's content by its ID or title.
-    For multiple pages, use `get_multiple_pages_by_id`.
+    """Retrieve a SINGLE page's content by its ID or title.
 
-    If the provided title matches more than one page, then the first one will be returned.
+    If a title is provided, then the first page with an exact matching title will be returned.
+
+    IMPORTANT: For retrieving MULTIPLE pages, use `get_multiple_pages_by_id` instead
+    for a massive performance and efficiency boost. If you call this function multiple times
+    instead of using `get_multiple_pages_by_id`, then the universe will explode.
     """
     client = ConfluenceClientV2(context.get_auth_token_or_empty())
-    if page_id:
-        return await client.get_page_by_id(page_id, content_format)
-    elif page_title:
-        return await client.get_page_by_title(page_title, content_format)
-    raise ToolExecutionError(message="Either page_id or page_title must be provided")
+    if page_identifier.isdigit():
+        return await client.get_page_by_id(page_identifier, content_format)
+    else:
+        return await client.get_page_by_title(page_identifier, content_format)
 
 
 @tool(
@@ -175,14 +175,21 @@ async def get_page(
 async def get_multiple_pages_by_id(
     context: ToolContext,
     page_ids: Annotated[
-        list[int], "The IDs of the pages to get. Maximum of 250 page ids supported."
+        list[str],
+        "The IDs of the pages to get. IDs are numeric. Titles of pages are NOT supported. "
+        "Maximum of 250 page ids supported.",
     ],
 ) -> Annotated[dict, "The pages"]:
-    """Get the content of multiple pages by their ID in a single request"""
+    """Get the content of MULTIPLE pages by their ID in a single efficient request.
+
+    IMPORTANT: Always use this function when you need to retrieve content from more than one page,
+    rather than making multiple separate calls to get_page, because this function is significantly
+    more efficient than calling get_page multiple times.
+    """
     if not page_ids:
         raise ToolExecutionError(message="The 'page_ids' parameter must be non-empty")
     page_ids = page_ids[:250]
-
+    validate_ids(page_ids)
     client = ConfluenceClientV2(context.get_auth_token_or_empty())
     pages = await client.get(
         "pages", params={"id": page_ids, "body-format": BodyFormat.STORAGE.to_api_value()}
@@ -198,8 +205,9 @@ async def get_multiple_pages_by_id(
 async def list_pages(
     context: ToolContext,
     space_ids: Annotated[
-        list[int] | None,
+        list[str] | None,
         "Restrict the response to only include pages in these spaces. "
+        "Only space IDs are supported. Titles of spaces are NOT supported. "
         "If not provided, then no restriction is applied. "
         "Maximum of 100 space ids supported.",
     ] = None,
@@ -215,6 +223,7 @@ async def list_pages(
 ) -> Annotated[dict, "The pages"]:
     """Get the content of multiple pages by their ID"""
     space_ids = space_ids[:100] if space_ids else None
+    validate_ids(space_ids)
     limit = max(1, min(limit, 250))
     client = ConfluenceClientV2(context.get_auth_token_or_empty())
     params = remove_none_values({
