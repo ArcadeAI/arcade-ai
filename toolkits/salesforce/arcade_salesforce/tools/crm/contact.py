@@ -6,6 +6,7 @@ from arcade_tdk.errors import ToolExecutionError
 
 from arcade_salesforce.exceptions import SalesforceToolExecutionError
 from arcade_salesforce.models import SalesforceClient
+from arcade_salesforce.utils import get_org_subdomain_from_secrets
 
 
 # TODO: Add support for referencing an account by keywords (name, website, etc). We can use the
@@ -42,7 +43,11 @@ async def create_contact(
     if not last_name:
         raise ToolExecutionError("Last name is required by Salesforce to create a contact.")
 
-    client = SalesforceClient(context.get_auth_token_or_empty())
+    client = SalesforceClient(
+        auth_token=context.get_auth_token_or_empty(),
+        org_subdomain=get_org_subdomain_from_secrets(context),
+    )
+
     contact = await client.create_contact(
         account_id=account_id,
         first_name=first_name,
