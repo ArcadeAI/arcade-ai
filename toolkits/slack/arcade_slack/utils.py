@@ -1,23 +1,21 @@
 import asyncio
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from arcade_tdk import ToolContext
 from arcade_tdk.errors import RetryableToolError
 
 from arcade_slack.constants import MAX_PAGINATION_SIZE_LIMIT, MAX_PAGINATION_TIMEOUT_SECONDS
 from arcade_slack.custom_types import SlackPaginationNextCursor
-from arcade_slack.exceptions import (
-    PaginationTimeoutError,
-    UsernameNotFoundError,
-)
+from arcade_slack.exceptions import PaginationTimeoutError
 from arcade_slack.models import (
     BasicUserInfo,
     ConversationMetadata,
     ConversationType,
     ConversationTypeSlackName,
     Message,
+    PaginationSentinel,
     SlackConversation,
     SlackConversationPurpose,
     SlackMessage,
@@ -93,18 +91,6 @@ def get_slack_conversation_type_as_str(channel: SlackConversation) -> str:
     if channel.get("is_mpim"):
         return ConversationTypeSlackName.MPIM.value
     raise ValueError(f"Invalid conversation type in channel {channel.get('name')}")
-
-
-def get_user_by_username(username: str, users_list: list[dict]) -> SlackUser:
-    usernames_found = []
-    for user in users_list:
-        if isinstance(user.get("name"), str):
-            usernames_found.append(user["name"])
-        username_found = user.get("name") or ""
-        if username.lower() == username_found.lower():
-            return SlackUser(**user)
-
-    raise UsernameNotFoundError(usernames_found=usernames_found, username_not_found=username)
 
 
 def convert_conversation_type_to_slack_name(
@@ -197,10 +183,13 @@ async def associate_members_of_multiple_conversations(
     context: ToolContext,
 ) -> list[dict]:
     """Associate members to each conversation, returning the updated list."""
-    return await asyncio.gather(*[  # type: ignore[no-any-return]
-        associate_members_of_conversation(get_members_in_conversation_func, context, conv)
-        for conv in conversations
-    ])
+    return cast(
+        list[dict],
+        await asyncio.gather(*[
+            associate_members_of_conversation(get_members_in_conversation_func, context, conv)
+            for conv in conversations
+        ]),
+    )
 
 
 async def associate_members_of_conversation(
@@ -317,6 +306,7 @@ async def async_paginate(
     limit: int | None = None,
     next_cursor: SlackPaginationNextCursor | None = None,
     max_pagination_timeout_seconds: int = MAX_PAGINATION_TIMEOUT_SECONDS,
+    sentinel: PaginationSentinel | None = None,
     *args: Any,
     **kwargs: Any,
 ) -> tuple[list, SlackPaginationNextCursor | None]:
@@ -332,6 +322,10 @@ async def async_paginate(
             not provided, the entire response dictionary is used.
         limit: The maximum number of items to retrieve (defaults to Slack's suggested limit).
         next_cursor: The cursor to use for pagination (optional).
+        max_pagination_timeout_seconds: The maximum timeout for the pagination loop (defaults to
+            MAX_PAGINATION_TIMEOUT_SECONDS).
+        sentinel: Control whether the pagination should continue after each iteration (optional).
+            If provided, the pagination will stop when the sentinel function returns True.
         *args: Positional arguments to pass to the Slack method.
         **kwargs: Keyword arguments to pass to the Slack method.
 
@@ -358,13 +352,18 @@ async def async_paginate(
             response = await func(*args, **iteration_kwargs)
 
             try:
-                results.extend(dict(response.data) if not response_key else response[response_key])
+                result = dict(response.data) if not response_key else response[response_key]
+                results.extend(result)
             except KeyError:
                 raise ValueError(f"Response key {response_key} not found in Slack response")
 
             next_cursor = response.get("response_metadata", {}).get("next_cursor")
 
-            if (limit and len(results) >= limit) or not next_cursor:
+            if (
+                (sentinel and sentinel(last_result=result))
+                or (limit and len(results) >= limit)
+                or not next_cursor
+            ):
                 should_continue = False
 
         return results
@@ -444,3 +443,23 @@ def convert_relative_datetime_to_unix_timestamp(
     days, hours, minutes = map(int, relative_datetime.split(":"))
     seconds = days * 86400 + hours * 3600 + minutes * 60
     return int(current_unix_timestamp - seconds)
+
+
+def short_user_info(user: dict) -> dict[str, str | None]:
+    data = {"id": user.get("id")}
+    if user.get("name"):
+        data["name"] = user["name"]
+    if isinstance(user.get("profile"), dict) and user["profile"].get("email"):
+        data["email"] = user["profile"]["email"]
+    return data
+
+
+def short_human_users_info(users: list[dict]) -> list[dict[str, str | None]]:
+    return [short_user_info(user) for user in users if not user.get("is_bot")]
+
+
+def is_valid_email(email: str) -> bool:
+    if "@" not in email:
+        return False
+    left, right = email.split("@", 1)
+    return len(left) > 0 and len(right) > 0 and "." in right
