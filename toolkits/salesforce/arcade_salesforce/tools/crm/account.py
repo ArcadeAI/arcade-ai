@@ -7,7 +7,7 @@ from arcade_tdk.errors import ToolExecutionError
 
 from arcade_salesforce.enums import SalesforceObject
 from arcade_salesforce.models import SalesforceClient
-from arcade_salesforce.utils import clean_account_data
+from arcade_salesforce.utils import clean_account_data, get_org_subdomain_from_secrets
 
 
 # TODO: We only return up to 10 items of each related object (e.g. contacts). Need to implement
@@ -56,7 +56,10 @@ async def get_account_data_by_keywords(
 
     limit = min(limit, 10)
 
-    client = SalesforceClient(context.get_auth_token_or_empty())
+    client = SalesforceClient(
+        auth_token=context.get_auth_token_or_empty(),
+        org_subdomain=get_org_subdomain_from_secrets(context),
+    )
 
     params = {
         "q": query,
@@ -113,7 +116,10 @@ async def get_account_data_by_id(
     An account is an organization (such as a customer, supplier, or partner, though more commonly
     a customer). In some Salesforce account setups, an account can also represent a person.
     """
-    client = SalesforceClient(context.get_auth_token_or_empty())
+    client = SalesforceClient(
+        auth_token=context.get_auth_token_or_empty(),
+        org_subdomain=get_org_subdomain_from_secrets(context),
+    )
 
     account = await client.get_account(account_id)
 
