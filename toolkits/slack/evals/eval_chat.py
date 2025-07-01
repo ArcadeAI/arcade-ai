@@ -15,15 +15,10 @@ from arcade_tdk import ToolCatalog
 import arcade_slack
 from arcade_slack.critics import RelativeTimeBinaryCritic
 from arcade_slack.tools.chat import (
-    get_channel_metadata_by_name,
-    get_conversation_metadata_by_id,
-    get_direct_message_conversation_metadata_by_username,
     get_members_in_channel_by_name,
     get_members_in_conversation_by_id,
     get_messages_in_channel_by_name,
     get_messages_in_conversation_by_id,
-    get_messages_in_direct_message_conversation_by_username,
-    get_messages_in_multi_person_dm_conversation_by_usernames,
     list_conversations_metadata,
     list_direct_message_conversations_metadata,
     list_group_direct_message_conversations_metadata,
@@ -432,71 +427,6 @@ def list_conversations_eval_suite() -> EvalSuite:
 
 
 @tool_eval()
-def get_conversations_metadata_eval_suite() -> EvalSuite:
-    """Create an evaluation suite for tools getting conversations metadata."""
-    suite = EvalSuite(
-        name="Slack Tools Evaluation",
-        system_message="You are an AI assistant that can interact with Slack to get information from conversations, users, etc.",
-        catalog=catalog,
-        rubric=rubric,
-    )
-
-    suite.add_case(
-        name="Get channel metadata by name",
-        user_message="Get the metadata of the #general channel",
-        expected_tool_calls=[
-            ExpectedToolCall(
-                func=get_channel_metadata_by_name,
-                args={
-                    "channel_name": "general",
-                },
-            ),
-        ],
-        critics=[
-            BinaryCritic(critic_field="conversation_name", weight=1.0),
-        ],
-    )
-
-    suite.add_case(
-        name="Get conversation metadata by id",
-        user_message="Get the metadata of the conversation with id '1234567890'",
-        expected_tool_calls=[
-            ExpectedToolCall(
-                func=get_conversation_metadata_by_id,
-                args={
-                    "conversation_id": "1234567890",
-                },
-            ),
-        ],
-        critics=[
-            BinaryCritic(critic_field="conversation_id", weight=1.0),
-        ],
-    )
-
-    get_metadata_by_username_user_messages = [
-        "get the metadata of the direct message conversation with the user 'jane.doe'"
-        "get data about my private conversation with the user 'jane.doe'",
-        "get data about my IM conversation with the 'jane.doe'",
-    ]
-
-    for i, user_message in enumerate(get_metadata_by_username_user_messages):
-        suite.add_case(
-            name=f"Get direct message conversation metadata by username {i}",
-            user_message=user_message,
-            expected_tool_calls=[
-                ExpectedToolCall(
-                    func=get_direct_message_conversation_metadata_by_username,
-                    args={
-                        "username": "jane.doe",
-                    },
-                ),
-            ],
-        )
-
-    return suite
-
-
-@tool_eval()
 def get_conversations_members_eval_suite() -> EvalSuite:
     """Create an evaluation suite for tools getting conversations members."""
     suite = EvalSuite(
@@ -578,12 +508,12 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
                 ExpectedToolCall(
                     func=get_messages_in_channel_by_name,
                     args={
-                        "conversation_name": "general",
+                        "channel_name": "general",
                     },
                 ),
             ],
             critics=[
-                BinaryCritic(critic_field="conversation_name", weight=1.0),
+                BinaryCritic(critic_field="channel_name", weight=1.0),
             ],
         )
 
@@ -618,13 +548,13 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
             ExpectedToolCall(
                 func=get_messages_in_channel_by_name,
                 args={
-                    "conversation_name": "general",
+                    "channel_name": "general",
                     "limit": 10,
                 },
             ),
         ],
         critics=[
-            BinaryCritic(critic_field="conversation_name", weight=1.0),
+            BinaryCritic(critic_field="channel_name", weight=1.0),
         ],
     )
 
@@ -730,13 +660,13 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
             ExpectedToolCall(
                 func=get_messages_in_channel_by_name,
                 args={
-                    "conversation_name": "general",
+                    "channel_name": "general",
                     "oldest_relative": "02:00:00",
                 },
             ),
         ],
         critics=[
-            BinaryCritic(critic_field="conversation_name", weight=0.5),
+            BinaryCritic(critic_field="channel_name", weight=0.5),
             RelativeTimeBinaryCritic(critic_field="oldest_relative", weight=0.5),
         ],
     )
@@ -748,14 +678,14 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
             ExpectedToolCall(
                 func=get_messages_in_channel_by_name,
                 args={
-                    "conversation_name": "general",
+                    "channel_name": "general",
                     "oldest_relative": "02:00:00",
                     "latest_relative": "00:03:00",
                 },
             ),
         ],
         critics=[
-            BinaryCritic(critic_field="conversation_name", weight=1 / 3),
+            BinaryCritic(critic_field="channel_name", weight=1 / 3),
             RelativeTimeBinaryCritic(critic_field="oldest_relative", weight=1 / 3),
             RelativeTimeBinaryCritic(critic_field="latest_relative", weight=1 / 3),
         ],
@@ -768,13 +698,13 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
             ExpectedToolCall(
                 func=get_messages_in_channel_by_name,
                 args={
-                    "conversation_name": "general",
+                    "channel_name": "general",
                     "oldest_relative": "01:00:00",
                 },
             ),
         ],
         critics=[
-            BinaryCritic(critic_field="conversation_name", weight=0.5),
+            BinaryCritic(critic_field="channel_name", weight=0.5),
             RelativeTimeBinaryCritic(critic_field="oldest_relative", weight=0.5),
         ],
     )
@@ -786,13 +716,13 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
             ExpectedToolCall(
                 func=get_messages_in_channel_by_name,
                 args={
-                    "conversation_name": "general",
+                    "channel_name": "general",
                     "oldest_relative": "07:00:00",
                 },
             ),
         ],
         critics=[
-            BinaryCritic(critic_field="conversation_name", weight=0.5),
+            BinaryCritic(critic_field="channel_name", weight=0.5),
             RelativeTimeBinaryCritic(critic_field="oldest_relative", weight=0.5),
         ],
     )
@@ -854,14 +784,14 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
             ExpectedToolCall(
                 func=get_messages_in_channel_by_name,
                 args={
-                    "conversation_name": "general",
+                    "channel_name": "general",
                     "oldest_datetime": "2025-01-20 00:00:00",
                     "latest_datetime": "2025-01-20 23:59:59",
                 },
             ),
         ],
         critics=[
-            BinaryCritic(critic_field="conversation_name", weight=1 / 3),
+            BinaryCritic(critic_field="channel_name", weight=1 / 3),
             # We use a timedelta of 10 seconds because sometimes the LLM will select the limit
             # date at 23:59:59, other times it'll select the next day at 00:00:00.
             DatetimeCritic(
@@ -880,14 +810,14 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
             ExpectedToolCall(
                 func=get_messages_in_channel_by_name,
                 args={
-                    "conversation_name": "general",
+                    "channel_name": "general",
                     "oldest_datetime": "2025-01-20 00:00:00",
                     "latest_datetime": "2025-01-25 23:59:59",
                 },
             ),
         ],
         critics=[
-            BinaryCritic(critic_field="conversation_name", weight=1 / 3),
+            BinaryCritic(critic_field="channel_name", weight=1 / 3),
             # We use a timedelta of 10 seconds because sometimes the LLM will select the limit
             # date at 23:59:59, other times it'll select the next day at 00:00:00.
             DatetimeCritic(
@@ -908,14 +838,14 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
             ExpectedToolCall(
                 func=get_messages_in_channel_by_name,
                 args={
-                    "conversation_name": "general",
+                    "channel_name": "general",
                     "limit": 5,
                     "cursor": "dXNlcjpVsDjzOTZGVDlQRA==",
                 },
             ),
         ],
         critics=[
-            BinaryCritic(critic_field="conversation_name", weight=1 / 3),
+            BinaryCritic(critic_field="channel_name", weight=1 / 3),
             BinaryCritic(critic_field="cursor", weight=1 / 3),
             BinaryCritic(critic_field="limit", weight=1 / 3),
         ],
@@ -1004,164 +934,6 @@ def get_messages_in_channel_eval_suite() -> EvalSuite:
                 "role": "assistant",
                 "content": 'Here are the last 2 messages from the general channel:\n\n1. **User:** 77686F2069732074686520626F73733F  \n   **Message:** "Almost there, Boss, need to get some evals in!"  \n   **Timestamp:** 2025-01-21 16:59:55\n\n2. **User:** 73616D2069732074686520626F7373  \n   **Message:** "hey, are the Slack Tools ready yet?"  \n   **Timestamp:** 2025-01-21 16:57:35',
             },
-        ],
-    )
-
-    return suite
-
-
-@tool_eval()
-def get_messages_in_direct_message_eval_suite() -> EvalSuite:
-    """Create an evaluation suite for tools getting messages in direct messages."""
-    suite = EvalSuite(
-        name="Slack Chat Tools Evaluation",
-        system_message="You are an AI assistant that can interact with Slack to send messages and get information from conversations, users, etc.",
-        catalog=catalog,
-        rubric=rubric,
-    )
-
-    no_arguments_user_messages_by_username = [
-        "what are the latest messages I exchanged with jane.doe",
-        "show my messages with jane.doe on Slack",
-        "list the messages I exchanged with jane.doe",
-        "list the message history with jane.doe",
-    ]
-
-    for i, user_message in enumerate(no_arguments_user_messages_by_username):
-        suite.add_case(
-            name=f"{user_message} [{i}]",
-            user_message=user_message,
-            expected_tool_calls=[
-                ExpectedToolCall(
-                    func=get_messages_in_direct_message_conversation_by_username,
-                    args={
-                        "username": "jane.doe",
-                    },
-                ),
-            ],
-            critics=[
-                BinaryCritic(critic_field="username", weight=1.0),
-            ],
-        )
-
-    suite.add_case(
-        name="get messages in direct conversation by username (on a specific date)",
-        user_message="get the messages I exchanged with jane.doe on 2025-01-31",
-        expected_tool_calls=[
-            ExpectedToolCall(
-                func=get_messages_in_direct_message_conversation_by_username,
-                args={
-                    "username": "jane.doe",
-                    "oldest_datetime": "2025-01-31 00:00:00",
-                    "latest_datetime": "2025-01-31 23:59:59",
-                },
-            ),
-        ],
-        critics=[
-            BinaryCritic(critic_field="username", weight=1 / 3),
-            DatetimeCritic(
-                critic_field="oldest_datetime", weight=1 / 3, max_difference=timedelta(minutes=2)
-            ),
-            DatetimeCritic(
-                critic_field="latest_datetime", weight=1 / 3, max_difference=timedelta(minutes=2)
-            ),
-        ],
-    )
-
-    suite.add_case(
-        name="Get conversation history oldest relative by username (2 days ago)",
-        user_message="Get the messages I exchanged with jane.doe starting 2 days ago",
-        expected_tool_calls=[
-            ExpectedToolCall(
-                func=get_messages_in_direct_message_conversation_by_username,
-                args={
-                    "username": "jane.doe",
-                    "oldest_relative": "02:00:00",
-                },
-            ),
-        ],
-        critics=[
-            BinaryCritic(critic_field="username", weight=0.5),
-            RelativeTimeBinaryCritic(critic_field="oldest_relative", weight=0.5),
-        ],
-    )
-
-    return suite
-
-
-@tool_eval()
-def get_messages_in_multi_person_direct_message_eval_suite() -> EvalSuite:
-    """Create an evaluation suite for tools getting messages in multi-person direct messages."""
-    suite = EvalSuite(
-        name="Slack Chat Tools Evaluation",
-        system_message="You are an AI assistant that can interact with Slack to send messages and get information from conversations, users, etc.",
-        catalog=catalog,
-        rubric=rubric,
-    )
-
-    no_arguments_user_messages_by_username = [
-        "what are the latest messages I exchanged together with the usernames john, ryan, and jennifer",
-        "show the messages in the multi person dm with the usernames john, ryan, and jennifer on Slack",
-        "list the messages I exchanged together with the usernames john, ryan, and jennifer",
-        "list the message history together with the usernames john, ryan, and jennifer",
-    ]
-
-    for i, user_message in enumerate(no_arguments_user_messages_by_username):
-        suite.add_case(
-            name=f"{user_message} [{i}]",
-            user_message=user_message,
-            expected_tool_calls=[
-                ExpectedToolCall(
-                    func=get_messages_in_multi_person_dm_conversation_by_usernames,
-                    args={
-                        "usernames": ["john", "ryan", "jennifer"],
-                    },
-                ),
-            ],
-            critics=[
-                BinaryCritic(critic_field="usernames", weight=1.0),
-            ],
-        )
-
-    suite.add_case(
-        name="get messages in direct conversation by username (on a specific date)",
-        user_message="get the messages I exchanged together with the usernames john, ryan, and jennifer on 2025-01-31",
-        expected_tool_calls=[
-            ExpectedToolCall(
-                func=get_messages_in_multi_person_dm_conversation_by_usernames,
-                args={
-                    "usernames": ["john", "ryan", "jennifer"],
-                    "oldest_datetime": "2025-01-31 00:00:00",
-                    "latest_datetime": "2025-01-31 23:59:59",
-                },
-            ),
-        ],
-        critics=[
-            BinaryCritic(critic_field="usernames", weight=1 / 3),
-            DatetimeCritic(
-                critic_field="oldest_datetime", weight=1 / 3, max_difference=timedelta(minutes=2)
-            ),
-            DatetimeCritic(
-                critic_field="latest_datetime", weight=1 / 3, max_difference=timedelta(minutes=2)
-            ),
-        ],
-    )
-
-    suite.add_case(
-        name="Get conversation history oldest relative by username (2 days ago)",
-        user_message="Get the messages I exchanged together with the usernames john, ryan, and jennifer starting 2 days ago",
-        expected_tool_calls=[
-            ExpectedToolCall(
-                func=get_messages_in_multi_person_dm_conversation_by_usernames,
-                args={
-                    "usernames": ["john", "ryan", "jennifer"],
-                    "oldest_relative": "02:00:00",
-                },
-            ),
-        ],
-        critics=[
-            BinaryCritic(critic_field="usernames", weight=0.5),
-            RelativeTimeBinaryCritic(critic_field="oldest_relative", weight=0.5),
         ],
     )
 
