@@ -17,7 +17,10 @@ async def get_current_cycle(
     context: ToolContext,
     team: Annotated[
         str,
-        "Team name or ID to get the current active cycle for (e.g. 'Frontend', 'Backend', 'Product').",
+        (
+            "Team name or ID to get the current active cycle for "
+            "(e.g. 'Frontend', 'Backend', 'Product')."
+        ),
     ],
 ) -> Annotated[dict[str, Any], "Current active cycle details"]:
     """Get the current active cycle (sprint) for a team
@@ -56,7 +59,10 @@ async def get_current_cycle(
 
     if not current_cycle:
         return {
-            "message": f"No current active cycle found for team '{team}'. The team may not have cycles enabled or no cycle is currently active.",
+            "message": (
+                f"No current active cycle found for team '{team}'. "
+                "The team may not have cycles enabled or no cycle is currently active."
+            ),
             "team": team,
             "current_cycle": None,
         }
@@ -67,7 +73,10 @@ async def get_current_cycle(
     return {
         "current_cycle": cleaned_cycle,
         "team": team,
-        "message": f"Current active cycle for team '{team}' is '{cleaned_cycle.get('name', cleaned_cycle.get('number', 'Unnamed'))}'",
+        "message": (
+            f"Current active cycle for team '{team}' is "
+            f"'{cleaned_cycle.get('name', cleaned_cycle.get('number', 'Unnamed'))}'"
+        ),
     }
 
 
@@ -131,7 +140,10 @@ async def list_cycles(
         "total_count": len(cleaned_cycles),
         "team": team,
         "active_only": active_only,
-        "message": f"Found {len(cleaned_cycles)} {'active' if active_only else ''} cycles for team '{team}'",
+        "message": (
+            f"Found {len(cleaned_cycles)} {'active' if active_only else ''} "
+            f"cycles for team '{team}'"
+        ),
     }
 
 
@@ -141,7 +153,10 @@ async def get_cycle_issues(
     cycle: Annotated[str, "Cycle name, number, or ID to get issues for."],
     team: Annotated[
         str | None,
-        "Team name or ID to scope the cycle lookup. Helpful when cycle names might conflict across teams.",
+        (
+            "Team name or ID to scope the cycle lookup. "
+            "Helpful when cycle names might conflict across teams."
+        ),
     ] = None,
     limit: Annotated[
         int, "Maximum number of issues to return. Min 1, max 100. Defaults to 50."
@@ -226,5 +241,8 @@ async def get_cycle_issues(
         "cycle": cleaned_cycle,
         "issues": cleaned_issues,
         "total_count": len(cleaned_issues),
-        "message": f"Found {len(cleaned_issues)} issues in cycle '{cleaned_cycle.get('name', cleaned_cycle.get('number', 'Unnamed'))}'",
+        "message": (
+            f"Found {len(cleaned_issues)} issues in cycle "
+            f"'{cleaned_cycle.get('name', cleaned_cycle.get('number', 'Unnamed'))}'"
+        ),
     }

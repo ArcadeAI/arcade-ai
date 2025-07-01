@@ -50,9 +50,7 @@ class TestGetWorkflowStates:
         }
 
         # Mock team resolution
-        with patch(
-            "arcade_linear.tools.workflows.resolve_team_by_name"
-        ) as mock_resolve_team:
+        with patch("arcade_linear.tools.workflows.resolve_team_by_name") as mock_resolve_team:
             mock_resolve_team.return_value = {"id": "team_1", "name": "Frontend"}
 
             # Call function
@@ -76,18 +74,14 @@ class TestGetWorkflowStates:
 
     @pytest.mark.asyncio
     @patch("arcade_linear.tools.workflows.LinearClient")
-    async def test_get_workflow_states_team_not_found(
-        self, mock_client_class, mock_context
-    ):
+    async def test_get_workflow_states_team_not_found(self, mock_client_class, mock_context):
         """Test workflow states retrieval with invalid team"""
         # Setup mock
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
 
         # Mock team resolution failure
-        with patch(
-            "arcade_linear.tools.workflows.resolve_team_by_name"
-        ) as mock_resolve_team:
+        with patch("arcade_linear.tools.workflows.resolve_team_by_name") as mock_resolve_team:
             mock_resolve_team.return_value = None
 
             # Call function
@@ -99,9 +93,7 @@ class TestGetWorkflowStates:
 
     @pytest.mark.asyncio
     @patch("arcade_linear.tools.workflows.LinearClient")
-    async def test_get_workflow_states_empty_result(
-        self, mock_client_class, mock_context
-    ):
+    async def test_get_workflow_states_empty_result(self, mock_client_class, mock_context):
         """Test workflow states retrieval with no states"""
         # Setup mock
         mock_client = AsyncMock()
@@ -109,9 +101,7 @@ class TestGetWorkflowStates:
         mock_client.get_workflow_states.return_value = {"nodes": []}
 
         # Mock team resolution
-        with patch(
-            "arcade_linear.tools.workflows.resolve_team_by_name"
-        ) as mock_resolve_team:
+        with patch("arcade_linear.tools.workflows.resolve_team_by_name") as mock_resolve_team:
             mock_resolve_team.return_value = {"id": "team_1", "name": "Frontend"}
 
             # Call function
@@ -128,16 +118,12 @@ class TestCreateWorkflowState:
 
     @pytest.mark.asyncio
     @patch("arcade_linear.tools.workflows.LinearClient")
-    async def test_create_workflow_state_success(
-        self, mock_client_class, mock_context
-    ):
+    async def test_create_workflow_state_success(self, mock_client_class, mock_context):
         """Test successful workflow state creation"""
         # Setup mock
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
-        mock_client.get_workflow_states.return_value = {
-            "nodes": []
-        }  # No existing states
+        mock_client.get_workflow_states.return_value = {"nodes": []}  # No existing states
         mock_client.create_workflow_state.return_value = {
             "success": True,
             "workflowState": {
@@ -151,9 +137,7 @@ class TestCreateWorkflowState:
         }
 
         # Mock team resolution
-        with patch(
-            "arcade_linear.tools.workflows.resolve_team_by_name"
-        ) as mock_resolve_team:
+        with patch("arcade_linear.tools.workflows.resolve_team_by_name") as mock_resolve_team:
             mock_resolve_team.return_value = {"id": "team_1", "name": "Frontend"}
 
             # Call function
@@ -175,9 +159,7 @@ class TestCreateWorkflowState:
 
     @pytest.mark.asyncio
     @patch("arcade_linear.tools.workflows.LinearClient")
-    async def test_create_workflow_state_invalid_type(
-        self, mock_client_class, mock_context
-    ):
+    async def test_create_workflow_state_invalid_type(self, mock_client_class, mock_context):
         """Test workflow state creation with invalid type"""
         # Setup mock
         mock_client = AsyncMock()
@@ -195,9 +177,7 @@ class TestCreateWorkflowState:
 
     @pytest.mark.asyncio
     @patch("arcade_linear.tools.workflows.LinearClient")
-    async def test_create_workflow_state_already_exists(
-        self, mock_client_class, mock_context
-    ):
+    async def test_create_workflow_state_already_exists(self, mock_client_class, mock_context):
         """Test workflow state creation when state already exists"""
         # Setup mock
         mock_client = AsyncMock()
@@ -207,9 +187,7 @@ class TestCreateWorkflowState:
         }
 
         # Mock team resolution
-        with patch(
-            "arcade_linear.tools.workflows.resolve_team_by_name"
-        ) as mock_resolve_team:
+        with patch("arcade_linear.tools.workflows.resolve_team_by_name") as mock_resolve_team:
             mock_resolve_team.return_value = {"id": "team_1", "name": "Frontend"}
 
             # Call function
@@ -223,18 +201,14 @@ class TestCreateWorkflowState:
 
     @pytest.mark.asyncio
     @patch("arcade_linear.tools.workflows.LinearClient")
-    async def test_create_workflow_state_team_not_found(
-        self, mock_client_class, mock_context
-    ):
+    async def test_create_workflow_state_team_not_found(self, mock_client_class, mock_context):
         """Test workflow state creation with invalid team"""
         # Setup mock
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
 
         # Mock team resolution failure
-        with patch(
-            "arcade_linear.tools.workflows.resolve_team_by_name"
-        ) as mock_resolve_team:
+        with patch("arcade_linear.tools.workflows.resolve_team_by_name") as mock_resolve_team:
             mock_resolve_team.return_value = None
 
             # Call function
@@ -270,9 +244,7 @@ class TestCreateWorkflowState:
         }
 
         # Mock team resolution
-        with patch(
-            "arcade_linear.tools.workflows.resolve_team_by_name"
-        ) as mock_resolve_team:
+        with patch("arcade_linear.tools.workflows.resolve_team_by_name") as mock_resolve_team:
             mock_resolve_team.return_value = {"id": "team_1", "name": "Backend"}
 
             # Call function with optional parameters
@@ -288,10 +260,7 @@ class TestCreateWorkflowState:
 
             # Assertions
             assert result["success"] is True
-            assert (
-                result["workflow_state"]["description"]
-                == "Ready for quality assurance testing"
-            )
+            assert result["workflow_state"]["description"] == "Ready for quality assurance testing"
 
             call_args = mock_client.create_workflow_state.call_args[0][0]
             assert call_args["description"] == "Ready for quality assurance testing"

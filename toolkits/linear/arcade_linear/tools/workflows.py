@@ -56,7 +56,10 @@ async def get_workflow_states(
             return {
                 "team": team,
                 "workflow_states": [],
-                "message": "No workflow states found for this team. This is unusual - teams typically have default states.",
+                "message": (
+                    "No workflow states found for this team. This is unusual - "
+                    "teams typically have default states."
+                ),
             }
 
         # Clean and organize the states
@@ -86,6 +89,70 @@ async def get_workflow_states(
         return {"error": f"Failed to get workflow states for team {team}: {e!s}"}
 
 
+async def _validate_state_type(state_type: str) -> dict[str, Any] | None:
+    """Validate workflow state type and return error if invalid"""
+    valid_types = ["backlog", "unstarted", "started", "completed", "canceled"]
+    if state_type.lower() not in valid_types:
+        return {
+            "error": (
+                f"Invalid workflow state type '{state_type}'. "
+                f"Valid types: {', '.join(valid_types)}"
+            )
+        }
+    return None
+
+
+async def _resolve_team_for_workflow(
+    context: ToolContext, client: LinearClient, team: str
+) -> tuple[str | None, str | None, dict[str, Any] | None]:
+    """Resolve team ID and name for workflow state creation"""
+    team_id = None
+    team_name = None
+
+    if team.startswith("team_"):  # Assume it's an ID
+        team_id = team
+        # Try to get team name for response
+        try:
+            teams_response = await client.get_teams(first=100)
+            for t in teams_response.get("nodes", []):
+                if t["id"] == team_id:
+                    team_name = t["name"]
+                    break
+        except Exception:
+            team_name = team_id
+    else:
+        team_data = await resolve_team_by_name(context, team)
+        if not team_data:
+            return (
+                None,
+                None,
+                {"error": f"Team not found: {team}. Please check the team name and try again."},
+            )
+        team_id = team_data["id"]
+        team_name = team_data["name"]
+
+    return team_id, team_name, None
+
+
+async def _check_existing_workflow_state(
+    context: ToolContext, client: LinearClient, team_id: str, name: str, team_name: str
+) -> dict[str, Any] | None:
+    """Check if workflow state already exists and return error if it does"""
+    try:
+        existing_states = await client.get_workflow_states(team_id=team_id)
+        for state in existing_states.get("nodes", []):
+            if state["name"].lower() == name.lower():
+                return {
+                    "error": f"Workflow state '{name}' already exists for team '{team_name}'. "
+                    f"Existing state ID: {state['id']}"
+                }
+    except Exception as e:
+        # If we can't check existing states, continue with creation
+        context.logger.warning(f"Could not check existing workflow states: {e}")
+
+    return None
+
+
 @tool(requires_auth=OAuth2(id="arcade-linear", scopes=["write"]))
 async def create_workflow_state(
     context: ToolContext,
@@ -95,20 +162,30 @@ async def create_workflow_state(
     name: Annotated[
         str, "Name of the new workflow state (e.g. 'In Review', 'Ready for QA', 'Blocked')."
     ],
-    type: Annotated[
+    state_type: Annotated[
         str,
-        "Type of workflow state. Valid values: 'backlog', 'unstarted', 'started', 'completed', 'canceled'.",
+        (
+            "Type of workflow state. Valid values: 'backlog', 'unstarted', "
+            "'started', 'completed', 'canceled'."
+        ),
     ],
     description: Annotated[
-        str | None, "Optional description explaining when this state should be used."
+        str | None,
+        "Optional description for the workflow state. Defaults to None.",
     ] = None,
     color: Annotated[
         str | None,
-        "Optional hex color for the state (e.g. '#3b82f6'). If not provided, Linear will assign a default color.",
+        (
+            "Optional hex color for the state (e.g. '#3b82f6'). If not provided, "
+            "Linear will assign a default color."
+        ),
     ] = None,
     position: Annotated[
         float | None,
-        "Optional position in the workflow (lower numbers appear first). If not provided, will be added at the end.",
+        (
+            "Optional position in the workflow (lower numbers appear first). "
+            "If not provided, will be added at the end."
+        ),
     ] = None,
 ) -> Annotated[dict[str, Any], "Created workflow state details"]:
     """Create a new workflow state (status) for a team
@@ -137,51 +214,25 @@ async def create_workflow_state(
 
     client = LinearClient(context.get_auth_token_or_empty())
 
-    # Validate type
-    valid_types = ["backlog", "unstarted", "started", "completed", "canceled"]
-    if type.lower() not in valid_types:
-        return {
-            "error": f"Invalid workflow state type '{type}'. Valid types: {', '.join(valid_types)}"
-        }
+    # Validate state_type
+    error_result = await _validate_state_type(state_type)
+    if error_result:
+        return error_result
 
     # Resolve team
-    team_id = None
-    team_name = None
-    if team.startswith("team_"):  # Assume it's an ID
-        team_id = team
-        # Try to get team name for response
-        try:
-            teams_response = await client.get_teams(first=100)
-            for t in teams_response.get("nodes", []):
-                if t["id"] == team_id:
-                    team_name = t["name"]
-                    break
-        except:
-            team_name = team_id
-    else:
-        team_data = await resolve_team_by_name(context, team)
-        if not team_data:
-            return {"error": f"Team not found: {team}. Please check the team name and try again."}
-        team_id = team_data["id"]
-        team_name = team_data["name"]
+    team_id, team_name, error_result = await _resolve_team_for_workflow(context, client, team)
+    if error_result:
+        return error_result
 
     # Check if workflow state already exists
-    try:
-        existing_states = await client.get_workflow_states(team_id=team_id)
-        for state in existing_states.get("nodes", []):
-            if state["name"].lower() == name.lower():
-                return {
-                    "error": f"Workflow state '{name}' already exists for team '{team_name}'. "
-                    f"Existing state ID: {state['id']}"
-                }
-    except Exception:
-        # If we can't check existing states, continue with creation
-        pass
+    error_result = await _check_existing_workflow_state(context, client, team_id, name, team_name)
+    if error_result:
+        return error_result
 
     # Build creation input
     create_input = {
         "name": name,
-        "type": type.lower(),
+        "type": state_type.lower(),
         "teamId": team_id,
     }
 

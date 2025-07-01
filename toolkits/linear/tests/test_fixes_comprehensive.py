@@ -9,11 +9,9 @@ import pytest
 from arcade_core.errors import ToolExecutionError
 from arcade_tdk import ToolContext
 
-from arcade_linear.tools.issues import create_issue, search_issues, update_issue
 from arcade_linear.utils import (
     build_issue_filter,
     clean_issue_data,
-    resolve_issue_identifier_to_uuid,
     resolve_labels_with_autocreate,
     resolve_projects_by_name,
 )
@@ -348,9 +346,7 @@ class TestTeamSpecificLabelResolution:
             mock_client.create_label.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_create_team_specific_when_exists_for_other_team(
-        self, mock_context
-    ):
+    async def test_create_team_specific_when_exists_for_other_team(self, mock_context):
         """Test that new team-specific labels are created when label exists for other teams only"""
         with patch("arcade_linear.utils.LinearClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -488,74 +484,70 @@ class TestMultiProjectSearch:
     @pytest.mark.asyncio
     async def test_search_issues_with_multiple_projects(self, mock_context):
         """Test that search_issues finds issues from all projects with the same name"""
-        with patch(
-            "arcade_linear.tools.issues.resolve_projects_by_name"
-        ) as mock_resolve_projects:
-            with patch(
-                "arcade_linear.tools.issues.LinearClient"
-            ) as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client_class.return_value = mock_client
+        with (
+            patch("arcade_linear.tools.issues.resolve_projects_by_name") as mock_resolve_projects,
+            patch("arcade_linear.tools.issues.LinearClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
 
-                # Mock multiple projects resolution
-                mock_resolve_projects.return_value = [
-                    {"id": "proj_arcade_test_team1", "name": "arcade-testing"},
-                    {"id": "proj_arcade_test_team2", "name": "arcade-testing"},
-                ]
+            # Mock multiple projects resolution
+            mock_resolve_projects.return_value = [
+                {"id": "proj_arcade_test_team1", "name": "arcade-testing"},
+                {"id": "proj_arcade_test_team2", "name": "arcade-testing"},
+            ]
 
-                # Mock issues response
-                mock_client.get_issues.return_value = {
-                    "nodes": [
-                        {
-                            "id": "issue1",
-                            "identifier": "T1-123",
-                            "title": "Issue from Team 1 project",
-                            "project": {
-                                "id": "proj_arcade_test_team1",
-                                "name": "arcade-testing",
-                            },
+            # Mock issues response
+            mock_client.get_issues.return_value = {
+                "nodes": [
+                    {
+                        "id": "issue1",
+                        "identifier": "T1-123",
+                        "title": "Issue from Team 1 project",
+                        "project": {
+                            "id": "proj_arcade_test_team1",
+                            "name": "arcade-testing",
                         },
-                        {
-                            "id": "issue2",
-                            "identifier": "T2-456",
-                            "title": "Issue from Team 2 project",
-                            "project": {
-                                "id": "proj_arcade_test_team2",
-                                "name": "arcade-testing",
-                            },
+                    },
+                    {
+                        "id": "issue2",
+                        "identifier": "T2-456",
+                        "title": "Issue from Team 2 project",
+                        "project": {
+                            "id": "proj_arcade_test_team2",
+                            "name": "arcade-testing",
                         },
-                    ],
-                    "pageInfo": {"hasNextPage": False, "endCursor": "cursor"},
-                }
+                    },
+                ],
+                "pageInfo": {"hasNextPage": False, "endCursor": "cursor"},
+            }
 
-                from arcade_linear.tools.issues import search_issues
+            from arcade_linear.tools.issues import search_issues
 
-                # Search for issues in "arcade-testing" project
-                response = await search_issues(mock_context, project="arcade-testing")
+            # Search for issues in "arcade-testing" project
+            response = await search_issues(mock_context, project="arcade-testing")
 
-                # Should have called resolve_projects_by_name instead of resolve_project_by_name
-                mock_resolve_projects.assert_called_once_with(
-                    mock_context, "arcade-testing"
-                )
+            # Should have called resolve_projects_by_name instead of resolve_project_by_name
+            mock_resolve_projects.assert_called_once_with(mock_context, "arcade-testing")
 
-                # Should have called get_issues with project_ids filter for both projects
-                mock_client.get_issues.assert_called_once()
-                call_args = mock_client.get_issues.call_args
-                filter_conditions = call_args.kwargs["filter_conditions"]
+            # Should have called get_issues with project_ids filter for both projects
+            mock_client.get_issues.assert_called_once()
+            call_args = mock_client.get_issues.call_args
+            filter_conditions = call_args.kwargs["filter_conditions"]
 
-                # Should filter by both project IDs
-                assert "project" in filter_conditions
-                assert "id" in filter_conditions["project"]
-                assert "in" in filter_conditions["project"]["id"]
-                assert filter_conditions["project"]["id"]["in"] == [
-                    "proj_arcade_test_team1",
-                    "proj_arcade_test_team2",
-                ]
+            # Should filter by both project IDs
+            assert "project" in filter_conditions
+            assert "id" in filter_conditions["project"]
+            assert "in" in filter_conditions["project"]["id"]
+            assert filter_conditions["project"]["id"]["in"] == [
+                "proj_arcade_test_team1",
+                "proj_arcade_test_team2",
+            ]
 
-                # Should return issues from both projects
-                assert len(response["issues"]) == 2
-                assert response["issues"][0]["identifier"] == "T1-123"
-                assert response["issues"][1]["identifier"] == "T2-456"
+            # Should return issues from both projects
+            assert len(response["issues"]) == 2
+            assert response["issues"][0]["identifier"] == "T1-123"
+            assert response["issues"][1]["identifier"] == "T2-456"
 
     @pytest.mark.asyncio
     async def test_single_project_id_still_works(self, mock_context):
@@ -744,102 +736,96 @@ class TestTemplateSupport:
     @pytest.mark.asyncio
     async def test_create_issue_with_template(self, mock_context):
         """Test that create_issue properly handles template parameter"""
-        with patch(
-            "arcade_linear.tools.issues.resolve_template_by_name"
-        ) as mock_resolve_template:
-            with patch(
-                "arcade_linear.tools.issues.resolve_team_by_name"
-            ) as mock_resolve_team:
-                with patch(
-                    "arcade_linear.tools.issues.LinearClient"
-                ) as mock_client_class:
-                    mock_client = AsyncMock()
-                    mock_client_class.return_value = mock_client
+        with (
+            patch("arcade_linear.tools.issues.resolve_template_by_name") as mock_resolve_template,
+            patch("arcade_linear.tools.issues.resolve_team_by_name") as mock_resolve_team,
+            patch("arcade_linear.tools.issues.LinearClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
 
-                    # Mock team resolution
-                    mock_resolve_team.return_value = {
-                        "id": "team_456",
-                        "name": "Product",
-                        "key": "PROD",
-                    }
+            # Mock team resolution
+            mock_resolve_team.return_value = {
+                "id": "team_456",
+                "name": "Product",
+                "key": "PROD",
+            }
 
-                    # Mock template resolution
-                    mock_resolve_template.return_value = {
-                        "id": "template_123",
-                        "name": "User Onboarding Template",
-                        "description": "Template for user onboarding issues",
-                        "team": {"id": "team_456", "name": "Product"},
-                    }
+            # Mock template resolution
+            mock_resolve_template.return_value = {
+                "id": "template_123",
+                "name": "User Onboarding Template",
+                "description": "Template for user onboarding issues",
+                "team": {"id": "team_456", "name": "Product"},
+            }
 
-                    # Mock successful issue creation
-                    mock_client.create_issue.return_value = {
-                        "success": True,
-                        "issue": {
-                            "id": "issue_new_123",
-                            "identifier": "PROD-45",
-                            "title": "New User Onboarding Issue",
-                            "description": "Issue created from template",
-                            "url": "https://linear.app/team/issue/PROD-45",
-                        },
-                    }
+            # Mock successful issue creation
+            mock_client.create_issue.return_value = {
+                "success": True,
+                "issue": {
+                    "id": "issue_new_123",
+                    "identifier": "PROD-45",
+                    "title": "New User Onboarding Issue",
+                    "description": "Issue created from template",
+                    "url": "https://linear.app/team/issue/PROD-45",
+                },
+            }
 
-                    from arcade_linear.tools.issues import create_issue
+            from arcade_linear.tools.issues import create_issue
 
-                    # Test creating issue with template
-                    response = await create_issue(
-                        mock_context,
-                        title="New User Onboarding Issue",
-                        team="Product",
-                        template="User Onboarding Template",
-                    )
+            # Test creating issue with template
+            response = await create_issue(
+                mock_context,
+                title="New User Onboarding Issue",
+                team="Product",
+                template="User Onboarding Template",
+            )
 
-                    # Verify template was resolved
-                    mock_resolve_template.assert_called_once_with(
-                        mock_context, "User Onboarding Template", "team_456"
-                    )
+            # Verify template was resolved
+            mock_resolve_template.assert_called_once_with(
+                mock_context, "User Onboarding Template", "team_456"
+            )
 
-                    # Verify create_issue was called with templateId
-                    mock_client.create_issue.assert_called_once()
-                    call_args = mock_client.create_issue.call_args[0][0]
-                    assert "templateId" in call_args
-                    assert call_args["templateId"] == "template_123"
+            # Verify create_issue was called with templateId
+            mock_client.create_issue.assert_called_once()
+            call_args = mock_client.create_issue.call_args[0][0]
+            assert "templateId" in call_args
+            assert call_args["templateId"] == "template_123"
 
-                    # Verify successful response
-                    assert response["success"] is True
-                    assert response["issue_identifier"] == "PROD-45"
+            # Verify successful response
+            assert response["success"] is True
+            assert response["issue_identifier"] == "PROD-45"
 
     @pytest.mark.asyncio
     async def test_create_issue_template_not_found(self, mock_context):
         """Test error handling when template is not found"""
-        with patch(
-            "arcade_linear.tools.issues.resolve_template_by_name"
-        ) as mock_resolve_template:
-            with patch(
-                "arcade_linear.tools.issues.resolve_team_by_name"
-            ) as mock_resolve_team:
-                # Mock team resolution
-                mock_resolve_team.return_value = {
-                    "id": "team_456",
-                    "name": "Product",
-                    "key": "PROD",
-                }
+        with (
+            patch("arcade_linear.tools.issues.resolve_template_by_name") as mock_resolve_template,
+            patch("arcade_linear.tools.issues.resolve_team_by_name") as mock_resolve_team,
+        ):
+            # Mock team resolution
+            mock_resolve_team.return_value = {
+                "id": "team_456",
+                "name": "Product",
+                "key": "PROD",
+            }
 
-                # Mock template not found
-                mock_resolve_template.return_value = None
+            # Mock template not found
+            mock_resolve_template.return_value = None
 
-                from arcade_linear.tools.issues import create_issue
+            from arcade_linear.tools.issues import create_issue
 
-                # Test creating issue with non-existent template
-                response = await create_issue(
-                    mock_context,
-                    title="Test Issue",
-                    team="Product",
-                    template="Nonexistent Template",
-                )
+            # Test creating issue with non-existent template
+            response = await create_issue(
+                mock_context,
+                title="Test Issue",
+                team="Product",
+                template="Nonexistent Template",
+            )
 
-                # Verify error response
-                assert "error" in response
-                assert "Template not found: Nonexistent Template" in response["error"]
+            # Verify error response
+            assert "error" in response
+            assert "Template not found: Nonexistent Template" in response["error"]
 
 
 class TestCycleSupport:
@@ -881,9 +867,7 @@ class TestCycleSupport:
             from arcade_linear.tools.issues import update_issue
 
             # Test updating issue to current cycle
-            response = await update_issue(
-                mock_context, issue_id="TEST-123", cycle="current"
-            )
+            response = await update_issue(mock_context, issue_id="TEST-123", cycle="current")
 
             # Verify current cycle was retrieved
             mock_client.get_current_cycle.assert_called_once_with("team_456")
@@ -901,176 +885,162 @@ class TestCycleSupport:
     @pytest.mark.asyncio
     async def test_update_issue_with_cycle_name(self, mock_context):
         """Test that update_issue can resolve cycle by name"""
-        with patch(
-            "arcade_linear.tools.issues.resolve_cycle_by_name"
-        ) as mock_resolve_cycle:
-            with patch(
-                "arcade_linear.tools.issues.LinearClient"
-            ) as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client_class.return_value = mock_client
+        with (
+            patch("arcade_linear.tools.issues.resolve_cycle_by_name") as mock_resolve_cycle,
+            patch("arcade_linear.tools.issues.LinearClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
 
-                # Mock current issue
-                mock_client.get_issue_by_id.return_value = {
+            # Mock current issue
+            mock_client.get_issue_by_id.return_value = {
+                "id": "issue_123",
+                "identifier": "TEST-123",
+                "team": {"id": "team_456", "name": "Product"},
+            }
+
+            # Mock cycle resolution
+            mock_resolve_cycle.return_value = {
+                "id": "cycle_789",
+                "number": 42,
+                "name": "Sprint 42",
+            }
+
+            # Mock successful update
+            mock_client.update_issue.return_value = {
+                "success": True,
+                "issue": {
                     "id": "issue_123",
                     "identifier": "TEST-123",
-                    "team": {"id": "team_456", "name": "Product"},
-                }
+                    "title": "Test Issue",
+                },
+            }
 
-                # Mock cycle resolution
-                mock_resolve_cycle.return_value = {
-                    "id": "cycle_789",
-                    "number": 42,
-                    "name": "Sprint 42",
-                }
+            from arcade_linear.tools.issues import update_issue
 
-                # Mock successful update
-                mock_client.update_issue.return_value = {
-                    "success": True,
-                    "issue": {
-                        "id": "issue_123",
-                        "identifier": "TEST-123",
-                        "title": "Test Issue",
-                    },
-                }
+            # Test updating issue with cycle name
+            response = await update_issue(mock_context, issue_id="TEST-123", cycle="Sprint 42")
 
-                from arcade_linear.tools.issues import update_issue
+            # Verify cycle was resolved by name
+            mock_resolve_cycle.assert_called_once_with(mock_context, "Sprint 42", "team_456")
 
-                # Test updating issue with cycle name
-                response = await update_issue(
-                    mock_context, issue_id="TEST-123", cycle="Sprint 42"
-                )
+            # Verify update was called with cycle ID
+            mock_client.update_issue.assert_called_once()
+            call_args = mock_client.update_issue.call_args
+            update_input = call_args[0][1]
+            assert "cycleId" in update_input
+            assert update_input["cycleId"] == "cycle_789"
 
-                # Verify cycle was resolved by name
-                mock_resolve_cycle.assert_called_once_with(
-                    mock_context, "Sprint 42", "team_456"
-                )
-
-                # Verify update was called with cycle ID
-                mock_client.update_issue.assert_called_once()
-                call_args = mock_client.update_issue.call_args
-                update_input = call_args[0][1]
-                assert "cycleId" in update_input
-                assert update_input["cycleId"] == "cycle_789"
-
-                # Verify successful response
-                assert response["success"] is True
+            # Verify successful response
+            assert response["success"] is True
 
     @pytest.mark.asyncio
     async def test_create_issue_with_cycle(self, mock_context):
         """Test that create_issue can assign issue to cycle"""
-        with patch(
-            "arcade_linear.tools.issues.resolve_cycle_by_name"
-        ) as mock_resolve_cycle:
-            with patch(
-                "arcade_linear.tools.issues.resolve_team_by_name"
-            ) as mock_resolve_team:
-                with patch(
-                    "arcade_linear.tools.issues.LinearClient"
-                ) as mock_client_class:
-                    mock_client = AsyncMock()
-                    mock_client_class.return_value = mock_client
+        with (
+            patch("arcade_linear.tools.issues.resolve_cycle_by_name") as mock_resolve_cycle,
+            patch("arcade_linear.tools.issues.resolve_team_by_name") as mock_resolve_team,
+            patch("arcade_linear.tools.issues.LinearClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
 
-                    # Mock team resolution
-                    mock_resolve_team.return_value = {
-                        "id": "team_456",
-                        "name": "Product",
-                        "key": "PROD",
-                    }
+            # Mock team resolution
+            mock_resolve_team.return_value = {
+                "id": "team_456",
+                "name": "Product",
+                "key": "PROD",
+            }
 
-                    # Mock cycle resolution
-                    mock_resolve_cycle.return_value = {
+            # Mock cycle resolution
+            mock_resolve_cycle.return_value = {
+                "id": "cycle_789",
+                "number": 42,
+                "name": "Sprint 42",
+            }
+
+            # Mock successful issue creation
+            mock_client.create_issue.return_value = {
+                "success": True,
+                "issue": {
+                    "id": "issue_new_123",
+                    "identifier": "PROD-45",
+                    "title": "New Issue",
+                    "cycle": {
                         "id": "cycle_789",
                         "number": 42,
                         "name": "Sprint 42",
-                    }
+                    },
+                },
+            }
 
-                    # Mock successful issue creation
-                    mock_client.create_issue.return_value = {
-                        "success": True,
-                        "issue": {
-                            "id": "issue_new_123",
-                            "identifier": "PROD-45",
-                            "title": "New Issue",
-                            "cycle": {
-                                "id": "cycle_789",
-                                "number": 42,
-                                "name": "Sprint 42",
-                            },
-                        },
-                    }
+            from arcade_linear.tools.issues import create_issue
 
-                    from arcade_linear.tools.issues import create_issue
+            # Test creating issue with cycle
+            response = await create_issue(
+                mock_context,
+                title="New Issue",
+                team="Product",
+                cycle="Sprint 42",
+            )
 
-                    # Test creating issue with cycle
-                    response = await create_issue(
-                        mock_context,
-                        title="New Issue",
-                        team="Product",
-                        cycle="Sprint 42",
-                    )
+            # Verify cycle was resolved
+            mock_resolve_cycle.assert_called_once_with(mock_context, "Sprint 42", "team_456")
 
-                    # Verify cycle was resolved
-                    mock_resolve_cycle.assert_called_once_with(
-                        mock_context, "Sprint 42", "team_456"
-                    )
+            # Verify create_issue was called with cycleId
+            mock_client.create_issue.assert_called_once()
+            call_args = mock_client.create_issue.call_args[0][0]
+            assert "cycleId" in call_args
+            assert call_args["cycleId"] == "cycle_789"
 
-                    # Verify create_issue was called with cycleId
-                    mock_client.create_issue.assert_called_once()
-                    call_args = mock_client.create_issue.call_args[0][0]
-                    assert "cycleId" in call_args
-                    assert call_args["cycleId"] == "cycle_789"
-
-                    # Verify successful response
-                    assert response["success"] is True
-                    assert response["issue_identifier"] == "PROD-45"
+            # Verify successful response
+            assert response["success"] is True
+            assert response["issue_identifier"] == "PROD-45"
 
     @pytest.mark.asyncio
     async def test_get_current_cycle(self, mock_context):
         """Test that get_current_cycle tool works correctly"""
-        with patch(
-            "arcade_linear.tools.cycles.resolve_team_by_name"
-        ) as mock_resolve_team:
-            with patch(
-                "arcade_linear.tools.cycles.LinearClient"
-            ) as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client_class.return_value = mock_client
+        with (
+            patch("arcade_linear.tools.cycles.resolve_team_by_name") as mock_resolve_team,
+            patch("arcade_linear.tools.cycles.LinearClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
 
-                # Mock team resolution
-                mock_resolve_team.return_value = {
-                    "id": "team_456",
-                    "name": "Product",
-                    "key": "PROD",
-                }
+            # Mock team resolution
+            mock_resolve_team.return_value = {
+                "id": "team_456",
+                "name": "Product",
+                "key": "PROD",
+            }
 
-                # Mock current cycle
-                mock_client.get_current_cycle.return_value = {
-                    "id": "cycle_789",
-                    "number": 42,
-                    "name": "Sprint 42",
-                    "startsAt": "2024-01-01T00:00:00Z",
-                    "endsAt": "2024-01-14T23:59:59Z",
-                    "progress": 0.5,
-                    "team": {"id": "team_456", "name": "Product"},
-                }
+            # Mock current cycle
+            mock_client.get_current_cycle.return_value = {
+                "id": "cycle_789",
+                "number": 42,
+                "name": "Sprint 42",
+                "startsAt": "2024-01-01T00:00:00Z",
+                "endsAt": "2024-01-14T23:59:59Z",
+                "progress": 0.5,
+                "team": {"id": "team_456", "name": "Product"},
+            }
 
-                from arcade_linear.tools.cycles import get_current_cycle
+            from arcade_linear.tools.cycles import get_current_cycle
 
-                # Test getting current cycle
-                response = await get_current_cycle(mock_context, team="Product")
+            # Test getting current cycle
+            response = await get_current_cycle(mock_context, team="Product")
 
-                # Verify team was resolved
-                mock_resolve_team.assert_called_once_with(mock_context, "Product")
+            # Verify team was resolved
+            mock_resolve_team.assert_called_once_with(mock_context, "Product")
 
-                # Verify current cycle was retrieved
-                mock_client.get_current_cycle.assert_called_once_with("team_456")
+            # Verify current cycle was retrieved
+            mock_client.get_current_cycle.assert_called_once_with("team_456")
 
-                # Verify response structure
-                assert "current_cycle" in response
-                assert response["current_cycle"]["id"] == "cycle_789"
-                assert response["current_cycle"]["name"] == "Sprint 42"
-                assert response["current_cycle"]["number"] == 42
+            # Verify response structure
+            assert "current_cycle" in response
+            assert response["current_cycle"]["id"] == "cycle_789"
+            assert response["current_cycle"]["name"] == "Sprint 42"
+            assert response["current_cycle"]["number"] == 42
 
 
 if __name__ == "__main__":

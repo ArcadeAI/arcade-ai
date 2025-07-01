@@ -426,7 +426,8 @@ class TestUpdateIssue:
 
     @pytest.mark.asyncio
     async def test_update_issue_closure_with_comment(self):
-        """Test that closing an issue with description adds a comment instead of updating description"""
+        """Test that closing an issue with description adds a comment instead of
+        updating description"""
         mock_context = AsyncMock()
         mock_context.get_auth_token_or_empty.return_value = "test_token"
 
@@ -680,40 +681,42 @@ class TestSearchIssuesProjectFilter:
     @pytest.mark.asyncio
     async def test_search_issues_with_project_space_hyphen_variation(self, mock_context):
         """Test that searching for project with space finds hyphenated project"""
-        with patch("arcade_linear.tools.issues.resolve_projects_by_name") as mock_resolve_projects:
-            with patch("arcade_linear.tools.issues.LinearClient") as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client_class.return_value = mock_client
+        with (
+            patch("arcade_linear.tools.issues.resolve_projects_by_name") as mock_resolve_projects,
+            patch("arcade_linear.tools.issues.LinearClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
 
-                # Mock project resolution finds the hyphenated project
-                mock_resolve_projects.return_value = [{"id": "proj_123", "name": "arcade-testing"}]
+            # Mock project resolution finds the hyphenated project
+            mock_resolve_projects.return_value = [{"id": "proj_123", "name": "arcade-testing"}]
 
-                # Mock successful issue search
-                mock_client.get_issues.return_value = {
-                    "nodes": [
-                        {
-                            "id": "issue_1",
-                            "identifier": "TEST-1",
-                            "title": "Test issue",
-                            "project": {"id": "proj_123", "name": "arcade-testing"},
-                        }
-                    ],
-                    "pageInfo": {"hasNextPage": False, "hasPreviousPage": False},
-                }
+            # Mock successful issue search
+            mock_client.get_issues.return_value = {
+                "nodes": [
+                    {
+                        "id": "issue_1",
+                        "identifier": "TEST-1",
+                        "title": "Test issue",
+                        "project": {"id": "proj_123", "name": "arcade-testing"},
+                    }
+                ],
+                "pageInfo": {"hasNextPage": False, "hasPreviousPage": False},
+            }
 
-                result = await search_issues(
-                    context=mock_context,
-                    project="arcade testing",  # Space-separated
-                )
+            result = await search_issues(
+                context=mock_context,
+                project="arcade testing",  # Space-separated
+            )
 
-                # Should successfully find issues in the hyphenated project
-                assert "error" not in result
-                assert len(result["issues"]) == 1
-                assert result["issues"][0]["project"]["name"] == "arcade-testing"
-                assert result["search_criteria"]["project"] == "arcade testing"
+            # Should successfully find issues in the hyphenated project
+            assert "error" not in result
+            assert len(result["issues"]) == 1
+            assert result["issues"][0]["project"]["name"] == "arcade-testing"
+            assert result["search_criteria"]["project"] == "arcade testing"
 
-                # Verify project resolution was called with the search term
-                mock_resolve_projects.assert_called_once_with(mock_context, "arcade testing")
+            # Verify project resolution was called with the search term
+            mock_resolve_projects.assert_called_once_with(mock_context, "arcade testing")
 
 
 class TestGetTemplates:
@@ -755,36 +758,38 @@ class TestGetTemplates:
     @pytest.mark.asyncio
     async def test_get_templates_with_team_filter(self, mock_context):
         """Test template retrieval with team filter"""
-        with patch("arcade_linear.tools.issues.resolve_team_by_name") as mock_resolve_team:
-            with patch("arcade_linear.tools.issues.LinearClient") as mock_client_class:
-                mock_client = AsyncMock()
-                mock_client_class.return_value = mock_client
+        with (
+            patch("arcade_linear.tools.issues.resolve_team_by_name") as mock_resolve_team,
+            patch("arcade_linear.tools.issues.LinearClient") as mock_client_class,
+        ):
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
 
-                # Mock team resolution
-                mock_resolve_team.return_value = {"id": "team_123", "name": "Engineering"}
+            # Mock team resolution
+            mock_resolve_team.return_value = {"id": "team_123", "name": "Engineering"}
 
-                # Mock templates response for specific team
-                mock_client.get_templates.return_value = {
-                    "nodes": [
-                        {
-                            "id": "template_1",
-                            "name": "Engineering Bug Report",
-                            "description": "Bug report for engineering team",
-                            "team": {"id": "team_123", "name": "Engineering"},
-                        }
-                    ]
-                }
+            # Mock templates response for specific team
+            mock_client.get_templates.return_value = {
+                "nodes": [
+                    {
+                        "id": "template_1",
+                        "name": "Engineering Bug Report",
+                        "description": "Bug report for engineering team",
+                        "team": {"id": "team_123", "name": "Engineering"},
+                    }
+                ]
+            }
 
-                result = await get_templates(context=mock_context, team="Engineering")
+            result = await get_templates(context=mock_context, team="Engineering")
 
-                assert "error" not in result
-                assert len(result["templates"]) == 1
-                assert result["team_filter"] == "Engineering"
-                assert result["templates"][0]["name"] == "Engineering Bug Report"
+            assert "error" not in result
+            assert len(result["templates"]) == 1
+            assert result["team_filter"] == "Engineering"
+            assert result["templates"][0]["name"] == "Engineering Bug Report"
 
-                # Verify team resolution and template fetching
-                mock_resolve_team.assert_called_once_with(mock_context, "Engineering")
-                mock_client.get_templates.assert_called_once_with(team_id="team_123")
+            # Verify team resolution and template fetching
+            mock_resolve_team.assert_called_once_with(mock_context, "Engineering")
+            mock_client.get_templates.assert_called_once_with(team_id="team_123")
 
     @pytest.mark.asyncio
     async def test_get_templates_team_not_found(self, mock_context):

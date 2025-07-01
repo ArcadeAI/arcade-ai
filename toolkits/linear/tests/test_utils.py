@@ -331,9 +331,7 @@ class TestIssueFilter:
 
     def test_build_issue_filter_basic(self):
         """Test basic issue filter building"""
-        result = build_issue_filter(
-            team_id="team_1", assignee_id="user_1", priority=2
-        )
+        result = build_issue_filter(team_id="team_1", assignee_id="user_1", priority=2)
 
         assert result["team"]["id"]["eq"] == "team_1"
         assert result["assignee"]["id"]["eq"] == "user_1"
@@ -379,9 +377,7 @@ class TestIssueFilter:
         # Total: 1 + 4 + 6 = 11 conditions minimum
 
         or_conditions = result["or"]
-        assert (
-            len(or_conditions) >= 9
-        )  # Should have many conditions for flexible search
+        assert len(or_conditions) >= 9  # Should have many conditions for flexible search
 
         # Should include multi-keyword conditions for title
         expected_multi_title = {
@@ -469,9 +465,7 @@ class TestIssueFilter:
 
         assert "or" in result3
         or_conditions3 = result3["or"]
-        assert (
-            len(or_conditions3) == 3
-        )  # Should have exactly 3 conditions for single word
+        assert len(or_conditions3) == 3  # Should have exactly 3 conditions for single word
 
         expected_single_conditions = [
             {"title": {"containsIgnoreCase": "authentication"}},
@@ -582,9 +576,7 @@ class TestResolutionFunctions:
         mock_client_class.return_value = mock_client
         mock_client.execute_query.return_value = {
             "data": {
-                "issueLabels": {
-                    "nodes": [{"id": "label_1", "name": "bug", "color": "#ff0000"}]
-                }
+                "issueLabels": {"nodes": [{"id": "label_1", "name": "bug", "color": "#ff0000"}]}
             }
         }
 
@@ -603,9 +595,7 @@ class TestResolutionFunctions:
 
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
-        mock_client.execute_query.return_value = {
-            "data": {"issueLabels": {"nodes": []}}
-        }
+        mock_client.execute_query.return_value = {"data": {"issueLabels": {"nodes": []}}}
 
         with pytest.raises(ToolExecutionError) as exc_info:
             await resolve_labels_by_names(mock_context, ["nonexistent"])
@@ -618,9 +608,7 @@ class TestProjectNameVariations:
 
     @pytest.mark.asyncio
     @patch("arcade_linear.utils.LinearClient")
-    async def test_resolve_projects_space_to_hyphen_variation(
-        self, mock_client_class
-    ):
+    async def test_resolve_projects_space_to_hyphen_variation(self, mock_client_class):
         """Test that 'arcade testing' finds 'arcade-testing' project"""
         mock_context = AsyncMock()
         mock_context.get_auth_token_or_empty.return_value = "test_token"
@@ -654,9 +642,7 @@ class TestProjectNameVariations:
 
     @pytest.mark.asyncio
     @patch("arcade_linear.utils.LinearClient")
-    async def test_resolve_projects_hyphen_to_space_variation(
-        self, mock_client_class
-    ):
+    async def test_resolve_projects_hyphen_to_space_variation(self, mock_client_class):
         """Test that 'arcade-testing' finds 'arcade testing' project"""
         mock_context = AsyncMock()
         mock_context.get_auth_token_or_empty.return_value = "test_token"

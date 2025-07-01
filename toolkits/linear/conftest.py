@@ -1,5 +1,6 @@
 import json
 import random
+import secrets
 import string
 from collections.abc import Callable
 from typing import Any
@@ -142,7 +143,7 @@ def build_issue_dict(
         team = build_team_dict()
         return {
             "id": id_ or generate_random_str(),
-            "identifier": identifier or f"TEST-{random.randint(1, 9999)}",
+            "identifier": identifier or f"TEST-{secrets.randbelow(9999) + 1}",
             "title": title or f"Test Issue {generate_random_str()}",
             "description": description or f"Description for test issue {generate_random_str()}",
             "priority": priority,
@@ -209,7 +210,7 @@ def build_cycle_dict(generate_random_str: Callable, build_team_dict: Callable) -
         description: str | None = None,
     ) -> dict[str, Any]:
         team = build_team_dict()
-        number = number or random.randint(1, 100)
+        number = number or secrets.randbelow(100) + 1
         return {
             "id": id_ or generate_random_str(),
             "number": number,

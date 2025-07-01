@@ -18,8 +18,10 @@ async def get_projects(
     context: ToolContext,
     team: Annotated[
         str | None,
-        "Team name or ID to filter projects. Provide team name (e.g. 'Frontend', 'Backend') or team ID. "
-        "Defaults to None (all teams).",
+        (
+            "Team name or ID to filter projects. Provide team name "
+            "(e.g. 'Frontend', 'Backend') or team ID. Defaults to None (all teams)."
+        ),
     ] = None,
     status: Annotated[
         ProjectStatus | None,
@@ -39,8 +41,11 @@ async def get_projects(
     ] = 50,
     after_cursor: Annotated[
         str | None,
-        "Cursor for pagination - get projects after this cursor. Use the 'end_cursor' from previous response. "
-        "Defaults to None (start from beginning).",
+        (
+            "Cursor for pagination - get projects after this cursor. "
+            "Use the 'end_cursor' from previous response. "
+            "Defaults to None (start from beginning)."
+        ),
     ] = None,
 ) -> Annotated[dict[str, Any], "Projects in the Linear workspace"]:
     """Get Linear projects for organization and tracking

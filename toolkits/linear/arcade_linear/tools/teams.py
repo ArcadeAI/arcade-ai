@@ -17,8 +17,12 @@ async def get_teams(
     context: ToolContext,
     team_name: Annotated[
         str | None,
-        "Filter by team name. Provide specific team name (e.g. 'Frontend', 'Product Web') or partial name. "
-        "Use this to find specific teams or check team membership. Defaults to None (all teams).",
+        (
+            "Filter by team name. Provide specific team name "
+            "(e.g. 'Frontend', 'Product Web') or partial name. "
+            "Use this to find specific teams or check team membership. "
+            "Defaults to None (all teams)."
+        ),
     ] = None,
     include_archived: Annotated[
         bool, "Whether to include archived teams in results. Defaults to False."
@@ -33,8 +37,11 @@ async def get_teams(
     ] = 50,
     after_cursor: Annotated[
         str | None,
-        "Cursor for pagination - get teams after this cursor. Use the 'end_cursor' from previous response. "
-        "Defaults to None (start from beginning).",
+        (
+            "Cursor for pagination - get teams after this cursor. "
+            "Use the 'end_cursor' from previous response. "
+            "Defaults to None (start from beginning)."
+        ),
     ] = None,
 ) -> Annotated[dict[str, Any], "Teams in the workspace with member information"]:
     """Get Linear teams and team information including team members

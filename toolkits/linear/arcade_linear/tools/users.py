@@ -21,8 +21,10 @@ async def get_users(
     ] = None,
     team: Annotated[
         str | None,
-        "Team name or ID to filter users by. Provide team name (e.g. 'Frontend', 'Backend') or team ID. "
-        "Defaults to None (all teams).",
+        (
+            "Team name or ID to filter users by. Provide team name "
+            "(e.g. 'Frontend', 'Backend') or team ID. Defaults to None (all teams)."
+        ),
     ] = None,
     include_guests: Annotated[
         bool, "Whether to include guest users in results. Defaults to False (team members only)."
@@ -35,8 +37,11 @@ async def get_users(
     ] = 50,
     after_cursor: Annotated[
         str | None,
-        "Cursor for pagination - get users after this cursor. Use the 'end_cursor' from previous response. "
-        "Defaults to None (start from beginning).",
+        (
+            "Cursor for pagination - get users after this cursor. "
+            "Use the 'end_cursor' from previous response. "
+            "Defaults to None (start from beginning)."
+        ),
     ] = None,
 ) -> Annotated[dict[str, Any], "Users in the workspace with their information"]:
     """Get Linear workspace users and their information

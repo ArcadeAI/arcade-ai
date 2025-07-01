@@ -162,7 +162,10 @@ def create_workflow_state_eval_suite() -> EvalSuite:
     # Eval Prompt: Create a new "In Review" status for the Frontend team
     suite.add_case(
         name="Create In Review status for Frontend",
-        user_message='Create a new workflow state called "In Review" for the Frontend team as a started type',
+        user_message=(
+            'Create a new workflow state called "In Review" '
+            "for the Frontend team as a started type"
+        ),
         expected_tool_calls=[
             ExpectedToolCall(
                 func=create_workflow_state,
@@ -183,7 +186,9 @@ def create_workflow_state_eval_suite() -> EvalSuite:
     # Eval Prompt: Add a "Ready for QA" state to the Backend team workflow
     suite.add_case(
         name="Add Ready for QA state to Backend",
-        user_message='Create a new workflow state "Ready for QA" for the Backend team as started type',
+        user_message=(
+            'Create a new workflow state "Ready for QA" ' "for the Backend team as started type"
+        ),
         expected_tool_calls=[
             ExpectedToolCall(
                 func=create_workflow_state,
@@ -204,7 +209,10 @@ def create_workflow_state_eval_suite() -> EvalSuite:
     # Eval Prompt: Create a "Blocked" status for the test team that shows when work is halted
     suite.add_case(
         name="Create Blocked status with description",
-        user_message='Create a workflow state called "Blocked" for the test team with type started and description "when work is halted"',
+        user_message=(
+            'Create a workflow state called "Blocked" for the test team '
+            'with type started and description "when work is halted"'
+        ),
         expected_tool_calls=[
             ExpectedToolCall(
                 func=create_workflow_state,
@@ -248,7 +256,9 @@ def create_workflow_state_eval_suite() -> EvalSuite:
     # Eval Prompt: Create a "Design Complete" completed status for the Design team with blue color
     suite.add_case(
         name="Create Design Complete status with color",
-        user_message='Create a "Design Complete" completed status for the Design team with blue color',
+        user_message=(
+            'Create a "Design Complete" completed status ' "for the Design team with blue color"
+        ),
         expected_tool_calls=[
             ExpectedToolCall(
                 func=create_workflow_state,
@@ -312,10 +322,14 @@ def create_workflow_state_eval_suite() -> EvalSuite:
         ],
     )
 
-    # Eval Prompt: Add a "Needs Refinement" unstarted state to the Product team for issues that need more planning
+    # Eval Prompt: Add a "Needs Refinement" unstarted state to the Product team
+    # for issues that need more planning
     suite.add_case(
         name="Create Needs Refinement unstarted state with description",
-        user_message='Add a "Needs Refinement" unstarted state to the Product team for issues that need more planning',
+        user_message=(
+            'Add a "Needs Refinement" unstarted state to the Product team '
+            "for issues that need more planning"
+        ),
         expected_tool_calls=[
             ExpectedToolCall(
                 func=create_workflow_state,

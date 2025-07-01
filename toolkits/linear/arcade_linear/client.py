@@ -48,18 +48,27 @@ class LinearClient:
                 if len(errors) == 1:
                     error = errors[0]
                     user_message = error.get("message", "Unknown GraphQL error")
-                    dev_message = f"{user_message} | Extensions: {error.get('extensions', {})} (HTTP {response.status_code})"
+                    dev_message = (
+                        f"{user_message} | Extensions: {error.get('extensions', {})} "
+                        f"(HTTP {response.status_code})"
+                    )
                 else:
                     error_messages = [err.get("message", "Unknown error") for err in errors]
                     user_message = f"Multiple errors: {'; '.join(error_messages)}"
-                    dev_message = f"Multiple GraphQL errors: {json.dumps(errors)} (HTTP {response.status_code})"
+                    dev_message = (
+                        f"Multiple GraphQL errors: {json.dumps(errors)} "
+                        f"(HTTP {response.status_code})"
+                    )
             else:
                 user_message = f"HTTP {response.status_code}: {response.reason_phrase}"
                 dev_message = f"HTTP {response.status_code}: {response.text}"
 
         except Exception as e:
             user_message = "Failed to parse Linear API error response"
-            dev_message = f"Failed to parse error response: {type(e).__name__}: {e!s} | Raw response: {response.text}"
+            dev_message = (
+                f"Failed to parse error response: {type(e).__name__}: {e!s} | "
+                f"Raw response: {response.text}"
+            )
 
         return user_message, dev_message
 
@@ -216,7 +225,12 @@ class LinearClient:
     ) -> dict[str, Any]:
         """Get issues with filtering and sorting"""
         query = """
-        query GetIssues($first: Int!, $after: String, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
+        query GetIssues(
+            $first: Int!,
+            $after: String,
+            $filter: IssueFilter,
+            $orderBy: PaginationOrderBy
+        ) {
             issues(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
                 nodes {
                     id
@@ -802,7 +816,8 @@ class LinearClient:
         cycle_filter = {}
         if team_id:
             cycle_filter["team"] = {"id": {"eq": team_id}}
-        # Note: We cannot filter by completedAt null in CycleFilter as DateComparator doesn't support null checks
+        # Note: We cannot filter by completedAt null in CycleFilter as
+        # DateComparator doesn't support null checks
         # Instead, we'll filter the results after getting them from the API
 
         variables = {

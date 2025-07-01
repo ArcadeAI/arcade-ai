@@ -326,7 +326,10 @@ def update_issue_eval_suite() -> EvalSuite:
     # Eval Prompt: Update issue description with latest findings and change status to "In Review"
     suite.add_case(
         name="Update description and status",
-        user_message='Update issue TES-8 description with latest findings and change status to "In Review"',
+        user_message=(
+            "Update issue TES-8 description with latest findings "
+            'and change status to "In Review"'
+        ),
         expected_tool_calls=[
             ExpectedToolCall(
                 func=update_issue,
@@ -491,7 +494,9 @@ def create_issue_eval_suite() -> EvalSuite:
     # Eval Prompt: Log a security vulnerability with high priority and assign to the Security team
     suite.add_case(
         name="Create security vulnerability issue",
-        user_message="Log a security vulnerability with high priority and assign to the Security team",
+        user_message=(
+            "Log a security vulnerability with high priority " "and assign to the Security team"
+        ),
         expected_tool_calls=[
             ExpectedToolCall(
                 func=create_issue,
@@ -514,7 +519,9 @@ def create_issue_eval_suite() -> EvalSuite:
     # Eval Prompt: Create issue with auto-created labels
     suite.add_case(
         name="Create issue with new labels",
-        user_message="Create a task for API optimization with labels: performance, backend, optimization",
+        user_message=(
+            "Create a task for API optimization with labels: " "performance, backend, optimization"
+        ),
         expected_tool_calls=[
             ExpectedToolCall(
                 func=create_issue,
@@ -542,7 +549,8 @@ def add_comment_to_issue_eval_suite() -> EvalSuite:
         name="Add Comment to Issue Evaluation",
         system_message=(
             "You are an AI assistant with access to Linear tools. "
-            "Use them to help the user add comments to Linear issues for documentation and communication."
+            "Use them to help the user add comments to Linear issues "
+            "for documentation and communication."
         ),
         catalog=catalog,
         rubric=rubric,

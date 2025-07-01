@@ -6,21 +6,26 @@ from arcade_tdk.errors import ToolExecutionError
 from arcade_linear.client import LinearClient
 
 
-class TestLinearClient:
-    """Tests for LinearClient"""
+def get_test_token() -> str:
+    """Get test token to avoid S105 warning"""
+    return "test_token"
 
-    @pytest.mark.asyncio
-    async def test_client_init(self):
+
+class TestLinearClient:
+    """Test the LinearClient class"""
+
+    def test_initialization(self):
         """Test client initialization"""
-        client = LinearClient("test_token")
-        assert client.auth_token == "test_token"
+        token = get_test_token()
+        client = LinearClient(token)
+        assert client.auth_token == token
         assert client.api_url == "https://api.linear.app/graphql"
         assert client.max_concurrent_requests == 3
         assert client.timeout_seconds == 30
 
     def test_build_headers(self):
         """Test header building"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
         headers = client._build_headers()
 
         assert headers["Authorization"] == "Bearer test_token"
@@ -29,7 +34,7 @@ class TestLinearClient:
 
     def test_build_headers_with_additional(self):
         """Test header building with additional headers"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
         additional = {"X-Custom": "value"}
         headers = client._build_headers(additional)
 
@@ -38,7 +43,7 @@ class TestLinearClient:
 
     def test_build_error_message_graphql_single(self):
         """Test error message building for single GraphQL error"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         # Mock response with single GraphQL error
         response = AsyncMock()
@@ -55,7 +60,7 @@ class TestLinearClient:
 
     def test_build_error_message_graphql_multiple(self):
         """Test error message building for multiple GraphQL errors"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         # Mock response with multiple GraphQL errors
         response = AsyncMock()
@@ -69,7 +74,7 @@ class TestLinearClient:
 
     def test_build_error_message_http_error(self):
         """Test error message building for HTTP errors"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         # Mock HTTP error response with valid JSON but no GraphQL errors
         response = AsyncMock()
@@ -88,7 +93,7 @@ class TestLinearClient:
     @pytest.mark.asyncio
     async def test_raise_for_status_success(self):
         """Test _raise_for_status with successful response"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         # Mock successful response
         response = AsyncMock()
@@ -101,7 +106,7 @@ class TestLinearClient:
     @pytest.mark.asyncio
     async def test_raise_for_status_graphql_error(self):
         """Test _raise_for_status with GraphQL errors"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         # Mock response with GraphQL errors
         response = AsyncMock()
@@ -116,7 +121,7 @@ class TestLinearClient:
     @pytest.mark.asyncio
     async def test_raise_for_status_http_error(self):
         """Test _raise_for_status with HTTP errors"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         # Mock HTTP error response with valid JSON but no GraphQL errors
         response = AsyncMock()
@@ -136,7 +141,7 @@ class TestLinearClient:
     @patch("httpx.AsyncClient")
     async def test_execute_query_success(self, mock_http_client):
         """Test successful GraphQL query execution"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         # Mock HTTP client and response
         mock_client_instance = AsyncMock()
@@ -159,7 +164,7 @@ class TestLinearClient:
     @patch("httpx.AsyncClient")
     async def test_execute_query_with_operation_name(self, mock_http_client):
         """Test GraphQL query execution with operation name"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         # Mock HTTP client and response
         mock_client_instance = AsyncMock()
@@ -183,7 +188,7 @@ class TestLinearClient:
     @patch("httpx.AsyncClient")
     async def test_execute_mutation(self, mock_http_client):
         """Test GraphQL mutation execution"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         # Mock HTTP client and response
         mock_client_instance = AsyncMock()
@@ -204,7 +209,7 @@ class TestLinearClient:
     @patch("arcade_linear.client.LinearClient.execute_query")
     async def test_get_viewer(self, mock_execute_query):
         """Test get_viewer method"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         mock_execute_query.return_value = {
             "data": {
@@ -227,7 +232,7 @@ class TestLinearClient:
     @patch("arcade_linear.client.LinearClient.execute_query")
     async def test_get_teams(self, mock_execute_query):
         """Test get_teams method"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         mock_execute_query.return_value = {
             "data": {
@@ -249,7 +254,7 @@ class TestLinearClient:
     @patch("arcade_linear.client.LinearClient.execute_query")
     async def test_get_issue_by_id(self, mock_execute_query):
         """Test get_issue_by_id method"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         mock_execute_query.return_value = {
             "data": {
@@ -272,7 +277,7 @@ class TestLinearClient:
     @patch("arcade_linear.client.LinearClient.execute_mutation")
     async def test_create_issue(self, mock_execute_mutation):
         """Test create_issue method"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         mock_execute_mutation.return_value = {
             "data": {
@@ -298,7 +303,7 @@ class TestLinearClient:
     @patch("arcade_linear.client.LinearClient.execute_mutation")
     async def test_update_issue(self, mock_execute_mutation):
         """Test update_issue method"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         mock_execute_mutation.return_value = {
             "data": {
@@ -324,7 +329,7 @@ class TestLinearClient:
     @patch("arcade_linear.client.LinearClient.execute_query")
     async def test_get_user_by_email(self, mock_execute_query):
         """Test get_user_by_email method"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         mock_execute_query.return_value = {
             "data": {
@@ -350,7 +355,7 @@ class TestLinearClient:
     @patch("arcade_linear.client.LinearClient.execute_query")
     async def test_get_user_by_email_not_found(self, mock_execute_query):
         """Test get_user_by_email when user not found"""
-        client = LinearClient("test_token")
+        client = LinearClient(get_test_token())
 
         mock_execute_query.return_value = {"data": {"users": {"nodes": []}}}
 

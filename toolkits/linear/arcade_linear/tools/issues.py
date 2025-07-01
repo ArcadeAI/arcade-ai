@@ -9,8 +9,6 @@ from arcade_linear.types import (
     SortDirection,
 )
 from arcade_linear.utils import (
-    _auto_transition_backlog_to_todo,
-    _set_todo_status_for_sprint_creation,
     add_pagination_info,
     build_issue_filter,
     clean_issue_data,
@@ -115,14 +113,19 @@ async def search_issues(
     search or filtering need.
 
     WHEN TO USE THIS TOOL (Primary scenarios):
-    - "Find all high-priority bugs assigned to me" - Use this with priority='high', labels=['bug'], assignee='me'
-    - "Show me In Progress issues in Frontend team" - Use this with status='In Progress', team='Frontend'
+    - "Find all high-priority bugs assigned to me" - Use this with
+      priority='high', labels=['bug'], assignee='me'
+    - "Show me In Progress issues in Frontend team" - Use this with
+      status='In Progress', team='Frontend'
     - "Find authentication issues" - Use this with keywords='authentication'
-    - "Show completed issues from last week" - Use this with status='Done', updated_after='last week'
-    - "Find unassigned critical bugs" - Use this with assignee='unassigned', labels=['critical', 'bug']
+    - "Show completed issues from last week" - Use this with
+      status='Done', updated_after='last week'
+    - "Find unassigned critical bugs" - Use this with
+      assignee='unassigned', labels=['critical', 'bug']
     - "Get all Backend team issues" - Use this with team='Backend'
     - "Find all issues currently In Progress" - Use this with status='In Progress'
-    - "Show completed issues from last week" - Use this with status='Done', updated_after='last week'
+    - "Show completed issues from last week" - Use this with
+      status='Done', updated_after='last week'
     - "Find To Do issues in Backend team" - Use this with status='To Do', team='Backend'
     - ANY combination of filters (team + status + priority + assignee + dates + labels)
 
@@ -148,168 +151,30 @@ async def search_issues(
             validate_date_format(date_field, date_value)
 
     # Parse dates with improved relative date range handling
-    created_after_date = None
-    created_before_date = None
-    if created_after:
-        if is_relative_date_range_term(created_after):
-            range_start, range_end = parse_date_range_for_relative_terms(
-                created_after
-            )
-            created_after_date = range_start
-            if created_before is None:
-                created_before_date = range_end
-        else:
-            created_after_date = parse_date_string(created_after)
-
-    if created_before and created_before_date is None:
-        if is_relative_date_range_term(created_before):
-            range_start, range_end = parse_date_range_for_relative_terms(
-                created_before
-            )
-            created_before_date = range_end
-        else:
-            created_before_date = parse_date_string(created_before)
-
-    # Handle updated_after with special logic for relative ranges
-    updated_after_date = None
-    updated_before_date = None
-    if updated_after:
-        if is_relative_date_range_term(updated_after):
-            # For relative terms like "last week", parse as a proper date range
-            range_start, range_end = parse_date_range_for_relative_terms(
-                updated_after
-            )
-            updated_after_date = range_start
-            # If this is a range term and no explicit updated_before was provided, use the range end
-            if updated_before is None:
-                updated_before_date = range_end
-        else:
-            # For specific dates, parse normally
-            updated_after_date = parse_date_string(updated_after)
-
-    # Handle updated_before (only if not already set by range logic above)
-    if updated_before and updated_before_date is None:
-        if is_relative_date_range_term(updated_before):
-            range_start, range_end = parse_date_range_for_relative_terms(
-                updated_before
-            )
-            updated_before_date = range_end
-        else:
-            updated_before_date = parse_date_string(updated_before)
+    (
+        created_after_date,
+        created_before_date,
+        updated_after_date,
+        updated_before_date,
+    ) = await _parse_search_dates(created_after, created_before, updated_after, updated_before)
 
     client = LinearClient(context.get_auth_token_or_empty())
 
     # Resolve team if provided
-    team_id = None
-    if team:
-        if team.startswith("team_"):  # Assume it's an ID
-            team_id = team
-        else:
-            team_data = await resolve_team_by_name(context, team)
-            if team_data:
-                team_id = team_data["id"]
-            else:
-                # Get available teams to help the user
-                try:
-                    client = LinearClient(context.get_auth_token_or_empty())
-                    teams_response = await client.get_teams(first=20)
-                    available_teams = teams_response.get("nodes", [])
+    team_id, team_error = await _resolve_search_team(context, team)
+    if team_error:
+        return team_error
 
-                    if available_teams:
-                        team_names = [
-                            t["name"] for t in available_teams[:10]
-                        ]  # Show up to 10 teams
-                        team_list = "', '".join(team_names)
-                        if len(available_teams) > 10:
-                            return {
-                                "error": f"Team '{team}' not found. Available teams include: '{team_list}' and {len(available_teams) - 10} others. Use 'get_teams' tool to see all teams, then specify the correct team name."
-                            }
-                        else:
-                            return {
-                                "error": f"Team '{team}' not found. Available teams: '{team_list}'. Please specify one of these existing team names."
-                            }
-                    else:
-                        return {
-                            "error": f"Team '{team}' not found and no teams could be retrieved. Please check the team name or use 'get_teams' tool to see available teams."
-                        }
-                except Exception:
-                    return {
-                        "error": f"Team '{team}' not found. Please check the team name or use 'get_teams' tool to see available teams."
-                    }
-
-    # Resolve assignee if provided
-    assignee_id = None
-    if assignee:
-        if assignee.lower() == "me":
-            viewer = await client.get_viewer()
-            assignee_id = viewer["id"]
-        elif assignee.lower() == "unassigned":
-            assignee_id = "unassigned"  # Special marker for null filter
-        elif assignee.startswith("user_"):  # Assume it's an ID
-            assignee_id = assignee
-        else:
-            user_data = await resolve_user_by_email_or_name(context, assignee)
-            if user_data:
-                assignee_id = user_data["id"]
-
-    # Resolve creator if provided
-    creator_id = None
-    if creator:
-        if creator.lower() == "me":
-            viewer = await client.get_viewer()
-            creator_id = viewer["id"]
-        elif creator.startswith("user_"):  # Assume it's an ID
-            creator_id = creator
-        else:
-            user_data = await resolve_user_by_email_or_name(context, creator)
-            if user_data:
-                creator_id = user_data["id"]
+    # Resolve assignee and creator if provided
+    assignee_id, creator_id = await _resolve_search_users(context, assignee, creator)
 
     # Resolve workflow state if provided
-    state_id = None
-    if status:
-        if status.startswith("state_"):  # Assume it's an ID
-            state_id = status
-        else:
-            state_data = await resolve_workflow_state_by_name(
-                context, status, team_id
-            )
-            if state_data:
-                state_id = state_data["id"]
+    state_id = await _resolve_search_state(context, status, team_id)
 
     # Resolve project(s) if provided - support multiple projects with same name
-    project_ids = None
-    if project:
-        if project.startswith("project_"):  # Assume it's an ID
-            project_ids = [project]  # Single project ID as list
-        else:
-            # Use multi-project resolution to find ALL projects with this name
-            project_data_list = await resolve_projects_by_name(context, project)
-            if project_data_list:
-                project_ids = [proj["id"] for proj in project_data_list]
-            else:
-                # No projects found with the given name - return helpful error
-                return {
-                    "error": f"Project '{project}' not found. Please check the project name and try again.",
-                    "issues": [],
-                    "total_count": 0,
-                    "search_criteria": {
-                        "keywords": keywords,
-                        "team": team,
-                        "status": status,
-                        "assignee": assignee,
-                        "creator": creator,
-                        "priority": priority,
-                        "labels": labels,
-                        "project": project,
-                        "created_after": created_after,
-                        "created_before": created_before,
-                        "updated_after": updated_after,
-                        "updated_before": updated_before,
-                        "sort_by": sort_by.value,
-                        "sort_direction": sort_direction.value,
-                    },
-                }
+    project_ids, project_error = await _resolve_search_project(context, project)
+    if project_error:
+        return project_error
 
     # Resolve labels if provided (read-only for search)
     label_ids = []
@@ -379,6 +244,186 @@ async def search_issues(
     return response
 
 
+def _parse_single_date_param(date_param, other_param_provided):
+    """Parse a single date parameter, handling relative ranges"""
+    if not date_param:
+        return None, None
+
+    if is_relative_date_range_term(date_param):
+        range_start, range_end = parse_date_range_for_relative_terms(date_param)
+        return range_start, range_end if not other_param_provided else None
+    else:
+        parsed_date = parse_date_string(date_param)
+        return parsed_date, None
+
+
+def _parse_created_dates(created_after, created_before):
+    """Parse created_after and created_before date parameters"""
+    created_after_date, auto_before = _parse_single_date_param(
+        created_after, created_before is not None
+    )
+    created_before_date = auto_before
+
+    if created_before and created_before_date is None:
+        if is_relative_date_range_term(created_before):
+            _, range_end = parse_date_range_for_relative_terms(created_before)
+            created_before_date = range_end
+        else:
+            created_before_date = parse_date_string(created_before)
+
+    return created_after_date, created_before_date
+
+
+def _parse_updated_dates(updated_after, updated_before):
+    """Parse updated_after and updated_before date parameters"""
+    updated_after_date, auto_before = _parse_single_date_param(
+        updated_after, updated_before is not None
+    )
+    updated_before_date = auto_before
+
+    if updated_before and updated_before_date is None:
+        if is_relative_date_range_term(updated_before):
+            _, range_end = parse_date_range_for_relative_terms(updated_before)
+            updated_before_date = range_end
+        else:
+            updated_before_date = parse_date_string(updated_before)
+
+    return updated_after_date, updated_before_date
+
+
+async def _parse_search_dates(created_after, created_before, updated_after, updated_before):
+    """Parse and process date parameters for search"""
+    created_after_date, created_before_date = _parse_created_dates(created_after, created_before)
+    updated_after_date, updated_before_date = _parse_updated_dates(updated_after, updated_before)
+    return created_after_date, created_before_date, updated_after_date, updated_before_date
+
+
+async def _resolve_search_team(context, team):
+    """Resolve team parameter for search"""
+    team_id = None
+    if team:
+        if team.startswith("team_"):  # Assume it's an ID
+            team_id = team
+        else:
+            team_data = await resolve_team_by_name(context, team)
+            if team_data:
+                team_id = team_data["id"]
+            else:
+                # Get available teams to help the user
+                try:
+                    client = LinearClient(context.get_auth_token_or_empty())
+                    teams_response = await client.get_teams(first=20)
+                    available_teams = teams_response.get("nodes", [])
+
+                    if available_teams:
+                        team_names = [
+                            t["name"] for t in available_teams[:10]
+                        ]  # Show up to 10 teams
+                        team_list = "', '".join(team_names)
+                        if len(available_teams) > 10:
+                            return None, {
+                                "error": (
+                                    f"Team '{team}' not found. Available teams include: "
+                                    f"'{team_list}' and {len(available_teams) - 10} others. "
+                                    "Use 'get_teams' tool to see all teams, then specify the "
+                                    "correct team name."
+                                )
+                            }
+                        else:
+                            return None, {
+                                "error": (
+                                    f"Team '{team}' not found. Available teams: '{team_list}'. "
+                                    "Please specify one of these existing team names."
+                                )
+                            }
+                    else:
+                        return None, {
+                            "error": (
+                                f"Team '{team}' not found and no teams could be retrieved. "
+                                "Please check the team name or use 'get_teams' tool to see "
+                                "available teams."
+                            )
+                        }
+                except Exception:
+                    return None, {
+                        "error": (
+                            f"Team '{team}' not found. Please check the team name or use "
+                            "'get_teams' tool to see available teams."
+                        )
+                    }
+    return team_id, None
+
+
+async def _resolve_search_users(context, assignee, creator):
+    """Resolve assignee and creator parameters for search"""
+    client = LinearClient(context.get_auth_token_or_empty())
+
+    # Resolve assignee if provided
+    assignee_id = None
+    if assignee:
+        if assignee.lower() == "me":
+            viewer = await client.get_viewer()
+            assignee_id = viewer["id"]
+        elif assignee.lower() == "unassigned":
+            assignee_id = "unassigned"  # Special marker for null filter
+        elif assignee.startswith("user_"):  # Assume it's an ID
+            assignee_id = assignee
+        else:
+            user_data = await resolve_user_by_email_or_name(context, assignee)
+            if user_data:
+                assignee_id = user_data["id"]
+
+    # Resolve creator if provided
+    creator_id = None
+    if creator:
+        if creator.lower() == "me":
+            viewer = await client.get_viewer()
+            creator_id = viewer["id"]
+        elif creator.startswith("user_"):  # Assume it's an ID
+            creator_id = creator
+        else:
+            user_data = await resolve_user_by_email_or_name(context, creator)
+            if user_data:
+                creator_id = user_data["id"]
+
+    return assignee_id, creator_id
+
+
+async def _resolve_search_state(context, status, team_id):
+    """Resolve workflow state for search"""
+    state_id = None
+    if status:
+        if status.startswith("state_"):  # Assume it's an ID
+            state_id = status
+        else:
+            state_data = await resolve_workflow_state_by_name(context, status, team_id)
+            if state_data:
+                state_id = state_data["id"]
+    return state_id
+
+
+async def _resolve_search_project(context, project):
+    """Resolve project parameter for search"""
+    project_ids = None
+    if project:
+        if project.startswith("project_"):  # Assume it's an ID
+            project_ids = [project]  # Single project ID as list
+        else:
+            # Use multi-project resolution to find ALL projects with this name
+            project_data_list = await resolve_projects_by_name(context, project)
+            if project_data_list:
+                project_ids = [proj["id"] for proj in project_data_list]
+            else:
+                # No projects found with the given name - return helpful error
+                return None, {
+                    "error": (
+                        f"Project '{project}' not found. Please check the project name "
+                        "and try again."
+                    )
+                }
+    return project_ids, None
+
+
 @tool(requires_auth=OAuth2(id="arcade-linear", scopes=["read"]))
 async def get_issue(
     context: ToolContext,
@@ -394,7 +439,10 @@ async def get_issue(
     ] = True,
     include_relations: Annotated[
         bool,
-        "Whether to include issue relations (blocks, dependencies) in the response. Defaults to True.",
+        (
+            "Whether to include issue relations (blocks, dependencies) in the "
+            "response. Defaults to True."
+        ),
     ] = True,
     include_children: Annotated[
         bool, "Whether to include sub-issues in the response. Defaults to True."
@@ -465,15 +513,16 @@ async def update_issue(
     issue_id: Annotated[
         str, "The Linear issue ID or identifier (e.g. 'FE-123', 'API-456') to update."
     ],
-    title: Annotated[
-        str | None, "New title for the issue. Defaults to None (no change)."
-    ] = None,
+    title: Annotated[str | None, "New title for the issue. Defaults to None (no change)."] = None,
     description: Annotated[
         str | None, "New description for the issue. Defaults to None (no change)."
     ] = None,
     status: Annotated[
         str | None,
-        "New workflow state name (e.g. 'In Progress', 'Done', 'Backlog'). Defaults to None (no change).",
+        (
+            "New workflow state name (e.g. 'In Progress', 'Done', 'Backlog'). "
+            "Defaults to None (no change)."
+        ),
     ] = None,
     assignee: Annotated[
         str | None,
@@ -504,11 +553,14 @@ async def update_issue(
     ] = None,
     cycle: Annotated[
         str | None,
-        "Cycle/sprint reference to add the issue to. Supports multiple formats: "
-        "'current' for current active cycle, 'next' for next upcoming cycle, "
-        "'previous'/'last' for recently completed cycle, 'in 3 weeks' for cycle containing date 3 weeks from now, "
-        "'next week' for cycle containing next week, or specific cycle name/number/ID. "
-        "Use 'none' to remove from cycle. Defaults to None (no change).",
+        (
+            "Cycle/sprint reference to add the issue to. Supports multiple formats: "
+            "'current' for current active cycle, 'next' for next upcoming cycle, "
+            "'previous'/'last' for recently completed cycle, 'in 3 weeks' for cycle "
+            "containing date 3 weeks from now, 'next week' for cycle containing next week, "
+            "or specific cycle name/number/ID. Use 'none' to remove from cycle. "
+            "Defaults to None (no change)."
+        ),
     ] = None,
     estimate: Annotated[
         float | None,
@@ -536,7 +588,8 @@ async def update_issue(
 
     Automatic workflow transitions:
     - When adding an issue to a sprint/cycle, if the issue is currently in "Backlog" status,
-      it will automatically be moved to "To Do" status (unless you explicitly specify a different status)
+      it will automatically be moved to "To Do" status (unless you explicitly specify a
+      different status)
     - Issues already in other states (In Progress, Done, etc.) will not be auto-transitioned
     - This ensures issues moved to active sprints are ready to be worked on
 
@@ -550,249 +603,234 @@ async def update_issue(
     This tool requires an existing issue - it cannot create new issues.
     """
 
-    client = LinearClient(context.get_auth_token_or_empty())
-
-    # First get the current issue to determine team context
-    current_issue = await client.get_issue_by_id(issue_id)
-    if not current_issue:
-        return {"error": f"Issue not found: {issue_id}"}
-
-    team_id = current_issue.get("team", {}).get("id")
+    client, current_issue, team_id, error = await _validate_and_setup_update(context, issue_id)
+    if error:
+        return error
 
     # Build update input
     update_input = {}
 
-    if title is not None:
-        update_input["title"] = title
-
-    if description is not None:
-        update_input["description"] = description
-
     # Resolve assignee if provided
+    assignee_id, assignee_error = await _resolve_update_assignee(context, assignee)
+    if assignee_error:
+        return assignee_error
     if assignee is not None:
-        if assignee.lower() == "me":
-            viewer = await client.get_viewer()
-            update_input["assigneeId"] = viewer["id"]
-        elif assignee.lower() == "unassigned":
-            update_input["assigneeId"] = None
-        elif assignee.startswith("user_"):  # Assume it's an ID
-            update_input["assigneeId"] = assignee
-        else:
-            user_data = await resolve_user_by_email_or_name(context, assignee)
-            if user_data:
-                update_input["assigneeId"] = user_data["id"]
-            else:
-                return {
-                    "error": f"User not found: {assignee}. Please check the username or email and try again."
-                }
+        update_input["assigneeId"] = assignee_id
 
     # Resolve workflow state if provided
+    state_id, status_error = await _resolve_update_status(context, status, team_id)
+    if status_error:
+        return status_error
     if status is not None:
-        if status.startswith("state_"):  # Assume it's an ID
-            update_input["stateId"] = status
-        else:
-            state_data = await resolve_workflow_state_by_name(
-                context, status, team_id
-            )
-            if state_data:
-                update_input["stateId"] = state_data["id"]
-            else:
-                # Status not found - provide helpful error with available statuses
-                try:
-                    # Get available statuses for this team to help the user
-                    available_states = await client.get_workflow_states(
-                        team_id=team_id
-                    )
-                    if available_states and available_states.get("nodes"):
-                        state_names = [s["name"] for s in available_states["nodes"]]
-                        return {
-                            "error": f"Workflow state '{status}' not found for this team. Available statuses: {', '.join(state_names)}. You can also create a new workflow state using the 'create_workflow_state' tool if needed."
-                        }
-                    else:
-                        return {
-                            "error": f"Workflow state '{status}' not found for this team. Use 'get_workflow_states' to see available statuses or 'create_workflow_state' to create new ones."
-                        }
-                except Exception:
-                    # Fallback if we can't get available states
-                    return {
-                        "error": f"Workflow state '{status}' not found for this team. Use 'get_workflow_states' to see available statuses or 'create_workflow_state' to create new ones."
-                    }
-
-    # Resolve priority if provided
-    if priority is not None:
-        priority_value = normalize_priority(priority)
-        if priority_value is not None:
-            update_input["priority"] = int(priority_value)
+        update_input["stateId"] = state_id
 
     # Resolve project if provided
-    if project is not None:
-        if project.lower() == "none":
-            update_input["projectId"] = None
-        elif project.startswith("project_"):  # Assume it's an ID
-            update_input["projectId"] = project
-        else:
-            project_data = await resolve_project_by_name(context, project)
-            if project_data:
-                update_input["projectId"] = project_data["id"]
+    await _handle_update_project(context, project, update_input)
 
     # Resolve labels if provided
-    if labels is not None:
-        if not labels:  # Empty list - remove all labels
-            update_input["labelIds"] = []
-        else:
-            label_data = await resolve_labels_with_autocreate(
-                context, labels, team_id
-            )
-            update_input["labelIds"] = [label["id"] for label in label_data]
+    await _handle_update_labels(context, labels, team_id, update_input)
 
     # Handle due date
-    if due_date is not None:
-        if due_date.lower() == "none":
-            update_input["dueDate"] = None
-        else:
-            validate_date_format("due_date", due_date)
-            due_date_parsed = parse_date_string(due_date)
-            if due_date_parsed:
-                update_input["dueDate"] = due_date_parsed.date().isoformat()
+    _handle_update_due_date(due_date, update_input)
 
     # Handle cycle/sprint with intelligent resolution
-    if cycle is not None:
-        if cycle.lower() == "none":
-            update_input["cycleId"] = None
-        elif cycle.startswith("cycle_"):  # Assume it's an ID
-            update_input["cycleId"] = cycle
-        else:
-            # First try relative/intelligent cycle resolution
-            relative_keywords = [
-                "current",
-                "next",
-                "previous",
-                "last",
-                "next week",
-                "next month",
-            ]
-            is_relative = (
-                cycle.lower() in relative_keywords
-                or cycle.lower().startswith("in ")
-                or cycle.lower().startswith("in")
-            )
-
-            cycle_data = None
-            if is_relative:
-                cycle_data = await resolve_cycle_by_relative_reference(
-                    context, cycle, team_id, client
-                )
-
-            # Fallback to name/number resolution if relative resolution didn't work
-            if not cycle_data:
-                cycle_data = await resolve_cycle_by_name(context, cycle, team_id)
-
-            if cycle_data:
-                update_input["cycleId"] = cycle_data["id"]
-
-                # Auto-transition from Backlog to To Do when adding to a sprint
-                await _auto_transition_backlog_to_todo(
-                    context, current_issue, update_input, team_id, status
-                )
-            else:
-                if is_relative:
-                    return {
-                        "error": f"No cycle found for '{cycle}'. This could mean no cycles are configured for the team, or no cycle matches the time period specified."
-                    }
-                else:
-                    return {
-                        "error": f"Cycle not found: {cycle}. Please check the cycle name/number and try again."
-                    }
+    cycle_error = await _resolve_update_cycle(context, cycle, team_id, update_input, status)
+    if cycle_error:
+        return cycle_error
 
     # Handle estimate
-    if estimate is not None:
-        update_input["estimate"] = estimate if estimate > 0 else None
+    _handle_update_estimate(estimate, update_input)
 
-    # Remove None values
-    update_input = remove_none_values(update_input)
-
-    if not update_input:
-        return {"error": "No valid fields provided for update"}
+    # Build and validate final update input
+    update_input, validation_error = _build_and_validate_update_input(
+        title, description, priority, update_input
+    )
+    if validation_error:
+        return validation_error
 
     # Handle special case: when closing an issue and providing a description,
     # add the description as a comment instead of updating the issue description
-    close_reason_comment = None
-    if "stateId" in update_input and description is not None and status:
-        # Check if this is a completion/closure status
-        closure_status_names = [
-            "done",
-            "completed",
-            "closed",
-            "resolved",
-            "finished",
-            "complete",
-            "shipped",
-            "released",
-            "deployed",
-            "merged",
-            "fixed",
-            "solved",
-        ]
-
-        is_closure_status = any(
-            closure_name in status.lower() for closure_name in closure_status_names
-        )
-
-        if is_closure_status:
-            # Extract the description to use as a closure comment
-            close_reason_comment = description
-
-            # Remove description from the update (don't modify the issue description)
-            if "description" in update_input:
-                del update_input["description"]
+    close_reason_added = await _handle_closure_comment(
+        context, client, issue_id, status, description
+    )
+    if close_reason_added and "description" in update_input:
+        del update_input["description"]
 
     # Update the issue
     result = await client.update_issue(issue_id, update_input)
 
-    if result["success"]:
-        # If we have a closure reason, add it as a comment
-        if close_reason_comment:
-            try:
-                comment_result = await client.create_comment(
-                    issue_id, close_reason_comment
-                )
-                if not comment_result.get("success"):
-                    # Log the comment failure but don't fail the whole operation
-                    pass
-            except Exception:
-                # Comment failed but issue update succeeded - that's okay
-                pass
+    return _build_update_response(result, issue_id, update_input, close_reason_added, status)
 
-        # Create a helpful message based on what was updated
-        message = f"Successfully updated issue {issue_id}"
 
-        # Add context about closure comment
-        if close_reason_comment:
-            message += " and added closure reason as comment"
+async def _validate_and_setup_update(context, issue_id):
+    """Validate and setup for update_issue"""
+    client = LinearClient(context.get_auth_token_or_empty())
 
-        # Add context about auto-transitions
-        if "cycleId" in update_input and "stateId" in update_input and status is None:
-            message += " (automatically moved from Backlog to To Do for sprint)"
+    # Get current issue data
+    current_issue = await client.get_issue(issue_id)
+    if not current_issue:
+        return None, None, None, {"error": f"Issue not found: {issue_id}"}
 
-        return {
-            "success": True,
-            "message": message,
-            "issue": clean_issue_data(result["issue"]),
-            "updated_fields": list(update_input.keys()),
-        }
+    # Get team ID from current issue
+    team_id = current_issue["team"]["id"]
+
+    return client, current_issue, team_id, None
+
+
+async def _resolve_update_assignee(context, assignee):
+    """Resolve assignee parameter for update_issue"""
+    if assignee is None:
+        return None, None
+
+    client = LinearClient(context.get_auth_token_or_empty())
+
+    if assignee.lower() == "me":
+        viewer = await client.get_viewer()
+        return viewer["id"], None
+    elif assignee.lower() == "unassigned":
+        return None, None  # Setting to None removes assignee
+    elif assignee.startswith("user_"):  # Assume it's an ID
+        return assignee, None
     else:
-        return {
-            "success": False,
-            "error": "Failed to update issue",
-        }
+        user_data = await resolve_user_by_email_or_name(context, assignee)
+        if user_data:
+            return user_data["id"], None
+        else:
+            return None, {
+                "error": (
+                    f"User not found: {assignee}. Please check the username or "
+                    "email and try again."
+                )
+            }
+
+
+async def _resolve_update_status(context, status, team_id):
+    """Resolve status parameter for update_issue"""
+    if status is None:
+        return None, None
+
+    client = LinearClient(context.get_auth_token_or_empty())
+
+    if status.startswith("state_"):  # Assume it's an ID
+        return status, None
+    else:
+        state_data = await resolve_workflow_state_by_name(context, status, team_id)
+        if state_data:
+            return state_data["id"], None
+        else:
+            # Status not found - provide helpful error with available statuses
+            try:
+                # Get available statuses for this team to help the user
+                available_states = await client.get_workflow_states(team_id=team_id)
+                if available_states and available_states.get("nodes"):
+                    state_names = [s["name"] for s in available_states["nodes"]]
+                    return None, {
+                        "error": (
+                            f"Workflow state '{status}' not found for this team. "
+                            f"Available statuses: {', '.join(state_names)}. You can also "
+                            "create a new workflow state using the 'create_workflow_state' "
+                            "tool if needed."
+                        )
+                    }
+                else:
+                    return None, {
+                        "error": (
+                            f"Workflow state '{status}' not found for this team. "
+                            "Use 'get_workflow_states' to see available statuses or "
+                            "'create_workflow_state' to create new ones."
+                        )
+                    }
+            except Exception:
+                # Fallback if we can't get available states
+                return None, {
+                    "error": (
+                        f"Workflow state '{status}' not found for this team. "
+                        "Use 'get_workflow_states' to see available statuses or "
+                        "'create_workflow_state' to create new ones."
+                    )
+                }
+
+
+async def _handle_auto_transition_to_todo(context, team_id, update_input, status):
+    """Handle auto-transition from Backlog to To Do when adding to sprint"""
+    if not status:
+        try:
+            client = LinearClient(context.get_auth_token_or_empty())
+            current_issue = await client.get_issue(context.get("issue_id", ""))
+            if current_issue:
+                current_state = current_issue.get("state", {})
+                if current_state and current_state.get("name", "").lower() == "backlog":
+                    todo_state = await resolve_workflow_state_by_name(context, "To Do", team_id)
+                    if todo_state:
+                        update_input["stateId"] = todo_state["id"]
+        except Exception as e:
+            context.logger.debug(f"Auto-transition failed: {e}")
+
+
+async def _resolve_cycle_data(context, cycle, team_id, client):
+    """Resolve cycle data using relative or name-based resolution"""
+    # First try relative/intelligent cycle resolution
+    relative_keywords = ["current", "next", "previous", "last", "next week", "next month"]
+    is_relative = (
+        cycle.lower() in relative_keywords
+        or cycle.lower().startswith("in ")
+        or cycle.lower().startswith("in")
+    )
+
+    cycle_data = None
+    if is_relative:
+        cycle_data = await resolve_cycle_by_relative_reference(context, cycle, team_id, client)
+
+    # Fallback to name/number resolution if relative resolution didn't work
+    if not cycle_data:
+        cycle_data = await resolve_cycle_by_name(context, cycle, team_id)
+
+    if cycle_data:
+        return cycle_data, None
+    else:
+        if is_relative:
+            return None, {
+                "error": (
+                    f"No cycle found for '{cycle}'. This could mean no cycles are configured "
+                    "for the team, or no cycle matches the time period specified."
+                )
+            }
+        else:
+            return None, {
+                "error": (
+                    f"Cycle not found: {cycle}. Please check the cycle name/number "
+                    "and try again."
+                )
+            }
+
+
+async def _resolve_update_cycle(context, cycle, team_id, update_input, status):
+    """Handle cycle/sprint resolution for update_issue"""
+    if not cycle:
+        return None
+
+    if cycle.lower() == "none":
+        update_input["cycleId"] = None
+    elif cycle.startswith("cycle_"):  # Assume it's an ID
+        update_input["cycleId"] = cycle
+    else:
+        client = LinearClient(context.get_auth_token_or_empty())
+        cycle_data, cycle_error = await _resolve_cycle_data(context, cycle, team_id, client)
+        if cycle_error:
+            return cycle_error
+
+        if cycle_data:
+            update_input["cycleId"] = cycle_data["id"]
+            # Auto-transition from Backlog to To Do when adding to a sprint (if no status specified)
+            await _handle_auto_transition_to_todo(context, team_id, update_input, status)
+
+    return None
 
 
 @tool(requires_auth=OAuth2(id="arcade-linear", scopes=["write"]))
 async def create_issue(
     context: ToolContext,
-    title: Annotated[
-        str, "Title of the issue to create. Should be descriptive and concise."
-    ],
+    title: Annotated[str, "Title of the issue to create. Should be descriptive and concise."],
     team: Annotated[
         str,
         "Team name or ID to create the issue in. REQUIRED - you must specify a team! "
@@ -806,7 +844,10 @@ async def create_issue(
     ] = None,
     assignee: Annotated[
         str | None,
-        "Email address or user ID of the person to assign this issue to. Defaults to None (unassigned).",
+        (
+            "Email address or user ID of the person to assign this issue to. "
+            "Defaults to None (unassigned)."
+        ),
     ] = None,
     priority: Annotated[
         str | None,
@@ -814,7 +855,10 @@ async def create_issue(
     ] = None,
     status: Annotated[
         str | None,
-        "Initial workflow state (e.g. 'To Do', 'Backlog', 'In Progress'). Defaults to team's default state.",
+        (
+            "Initial workflow state (e.g. 'To Do', 'Backlog', 'In Progress'). "
+            "Defaults to team's default state."
+        ),
     ] = None,
     labels: Annotated[
         list[str] | None,
@@ -837,19 +881,22 @@ async def create_issue(
     ] = None,
     cycle: Annotated[
         str | None,
-        "Cycle/sprint reference to assign the issue to. Supports multiple formats: "
-        "'current' for current active cycle, 'next' for next upcoming cycle, "
-        "'previous'/'last' for recently completed cycle, 'in 3 weeks' for cycle containing date 3 weeks from now, "
-        "'next week' for cycle containing next week, or specific cycle name/number/ID. "
-        "Defaults to None (no cycle assignment).",
+        (
+            "Cycle/sprint reference to assign the issue to. Supports multiple formats: "
+            "'current' for current active cycle, 'next' for next upcoming cycle, "
+            "'previous'/'last' for recently completed cycle, 'in 3 weeks' for cycle "
+            "containing date 3 weeks from now, 'next week' for cycle containing next week, "
+            "or specific cycle name/number/ID. Defaults to None (no cycle assignment)."
+        ),
     ] = None,
     due_date: Annotated[
         str | None,
-        "Due date in ISO format (e.g. '2024-03-15') or relative format (e.g. 'next Friday'). Defaults to None.",
+        (
+            "Due date in ISO format (e.g. '2024-03-15') or relative format "
+            "(e.g. 'next Friday'). Defaults to None."
+        ),
     ] = None,
-    estimate: Annotated[
-        int | None, "Story point estimate (1-21). Defaults to None."
-    ] = None,
+    estimate: Annotated[int | None, "Story point estimate (1-21). Defaults to None."] = None,
 ) -> Annotated[dict[str, Any], "Created issue details"]:
     """CREATE ISSUES, TASKS, BUGS - Primary tool for ALL work item creation
 
@@ -889,224 +936,67 @@ async def create_issue(
     - Never assume or default to any team name - always get user confirmation
     - Examples of good team usage: team="Engineering", team="Product", team="Design"
 
-    Don't overthink it - just call this tool for ANY creation request, but always with a user-specified team!
+    Don't overthink it - just call this tool for ANY creation request, but always with a
+    user-specified team!
     """
 
     client = LinearClient(context.get_auth_token_or_empty())
 
     # Handle parent issue first - it affects team resolution
-    parent_issue_data = None
-    if parent_issue:
-        parent_issue_data = await resolve_issue_with_team_info(context, parent_issue)
-        if not parent_issue_data:
-            return {
-                "error": f"Parent issue not found: {parent_issue}. Please provide a valid issue identifier."
-            }
+    parent_issue_data, parent_issue_error = await _resolve_parent_issue(context, parent_issue)
+    if parent_issue_error:
+        return parent_issue_error
 
     # Resolve team with proper parent issue inheritance
-    team_id = None
-    if parent_issue_data:
-        # For sub-issues, inherit the team from the parent issue
-        team_id = parent_issue_data["team"]["id"]
-        parent_team_name = parent_issue_data["team"]["name"]
-
-        # If user specified a different team, warn but use parent's team for consistency
-        if team.startswith("team_"):
-            if team != team_id:
-                return {
-                    "error": f"Sub-issue must be created in the same team as parent issue. Parent issue {parent_issue} is in team '{parent_team_name}'. Sub-issues cannot be in different teams."
-                }
-        else:
-            # Check if user-specified team matches parent's team
-            user_team_data = await resolve_team_by_name(context, team)
-            if user_team_data and user_team_data["id"] != team_id:
-                return {
-                    "error": f"Sub-issue must be created in the same team as parent issue. Parent issue {parent_issue} is in team '{parent_team_name}', but you specified team '{team}'. Sub-issues cannot be in different teams."
-                }
-    else:
-        # No parent issue, resolve team normally
-        if team.startswith("team_"):  # Assume it's an ID
-            team_id = team
-        else:
-            team_data = await resolve_team_by_name(context, team)
-            if team_data:
-                team_id = team_data["id"]
-            else:
-                # Get available teams to help the user
-                try:
-                    client = LinearClient(context.get_auth_token_or_empty())
-                    teams_response = await client.get_teams(first=20)
-                    available_teams = teams_response.get("nodes", [])
-
-                    if available_teams:
-                        team_names = [
-                            t["name"] for t in available_teams[:10]
-                        ]  # Show up to 10 teams
-                        team_list = "', '".join(team_names)
-                        if len(available_teams) > 10:
-                            return {
-                                "error": f"Team '{team}' not found. Available teams include: '{team_list}' and {len(available_teams) - 10} others. Use 'get_teams' tool to see all teams, then specify the correct team name."
-                            }
-                        else:
-                            return {
-                                "error": f"Team '{team}' not found. Available teams: '{team_list}'. Please specify one of these existing team names."
-                            }
-                    else:
-                        return {
-                            "error": f"Team '{team}' not found and no teams could be retrieved. Please check the team name or use 'get_teams' tool to see available teams."
-                        }
-                except Exception:
-                    return {
-                        "error": f"Team '{team}' not found. Please check the team name or use 'get_teams' tool to see available teams."
-                    }
-
-    # Build create input
-    create_input = {
-        "title": title,
-        "teamId": team_id,
-    }
-
-    if description:
-        create_input["description"] = description
+    team_id, team_error = await _resolve_create_team(context, team, parent_issue_data)
+    if team_error:
+        return team_error
 
     # Resolve assignee if provided
-    if assignee:
-        if assignee.lower() == "me":
-            viewer = await client.get_viewer()
-            create_input["assigneeId"] = viewer["id"]
-        elif assignee.startswith("user_"):  # Assume it's an ID
-            create_input["assigneeId"] = assignee
-        else:
-            user_data = await resolve_user_by_email_or_name(context, assignee)
-            if user_data:
-                create_input["assigneeId"] = user_data["id"]
-            else:
-                return {
-                    "error": f"User not found: {assignee}. Please check the username or email and try again."
-                }
+    assignee_id, assignee_error = await _resolve_create_assignee(context, assignee)
+    if assignee_error:
+        return assignee_error
 
     # Resolve workflow state if provided
-    if status:
-        if status.startswith("state_"):  # Assume it's an ID
-            create_input["stateId"] = status
-        else:
-            state_data = await resolve_workflow_state_by_name(
-                context, status, team_id
-            )
-            if state_data:
-                create_input["stateId"] = state_data["id"]
-            else:
-                # Status not found - provide helpful error with available statuses
-                try:
-                    # Get available statuses for this team to help the user
-                    available_states = await client.get_workflow_states(
-                        team_id=team_id
-                    )
-                    if available_states and available_states.get("nodes"):
-                        state_names = [s["name"] for s in available_states["nodes"]]
-                        return {
-                            "error": f"Workflow state '{status}' not found for this team. Available statuses: {', '.join(state_names)}. You can also create a new workflow state using the 'create_workflow_state' tool if needed."
-                        }
-                    else:
-                        return {
-                            "error": f"Workflow state '{status}' not found for this team. Use 'get_workflow_states' to see available statuses or 'create_workflow_state' to create new ones."
-                        }
-                except Exception:
-                    # Fallback if we can't get available states
-                    return {
-                        "error": f"Workflow state '{status}' not found for this team. Use 'get_workflow_states' to see available statuses or 'create_workflow_state' to create new ones."
-                    }
+    state_id, status_error = await _resolve_create_status(context, status, team_id)
+    if status_error:
+        return status_error
 
-    # Resolve project if provided
-    if project:
-        if project.startswith("project_"):  # Assume it's an ID
-            create_input["projectId"] = project
-        else:
-            project_data = await resolve_project_by_name(context, project)
-            if project_data:
-                create_input["projectId"] = project_data["id"]
-
-    # Resolve labels if provided
-    if labels:
-        label_data = await resolve_labels_with_autocreate(context, labels, team_id)
-        create_input["labelIds"] = [label["id"] for label in label_data]
-
-    # Resolve template if provided
-    if template:
-        if template.startswith("template_"):  # Assume it's an ID
-            create_input["templateId"] = template
-        else:
-            # Resolve template by name within the team context
-            template_data = await resolve_template_by_name(context, template, team_id)
-            if template_data:
-                create_input["templateId"] = template_data["id"]
-            else:
-                return {
-                    "error": f"Template not found: {template}. Please check the template name and try again."
-                }
-
-    # Handle parent issue - we already resolved it earlier
-    if parent_issue_data:
-        create_input["parentId"] = parent_issue_data["id"]
-
-    # Handle cycle/sprint with intelligent resolution
-    if cycle:
-        if cycle.startswith("cycle_"):  # Assume it's an ID
-            create_input["cycleId"] = cycle
-        else:
-            # First try relative/intelligent cycle resolution
-            relative_keywords = [
-                "current",
-                "next",
-                "previous",
-                "last",
-                "next week",
-                "next month",
-            ]
-            is_relative = (
-                cycle.lower() in relative_keywords
-                or cycle.lower().startswith("in ")
-                or cycle.lower().startswith("in")
-            )
-
-            cycle_data = None
-            if is_relative:
-                cycle_data = await resolve_cycle_by_relative_reference(
-                    context, cycle, team_id, client
-                )
-
-            # Fallback to name/number resolution if relative resolution didn't work
-            if not cycle_data:
-                cycle_data = await resolve_cycle_by_name(context, cycle, team_id)
-
-            if cycle_data:
-                create_input["cycleId"] = cycle_data["id"]
-
-                # Auto-set to "To Do" when creating in a sprint (unless user specified status)
-                if not status:
-                    await _set_todo_status_for_sprint_creation(
-                        context, create_input, team_id
-                    )
-            else:
-                if is_relative:
-                    return {
-                        "error": f"No cycle found for '{cycle}'. This could mean no cycles are configured for the team, or no cycle matches the time period specified."
-                    }
-                else:
-                    return {
-                        "error": f"Cycle not found: {cycle}. Please check the cycle name/number and try again."
-                    }
+    # Resolve project, labels, and template if provided
+    (
+        project_data,
+        label_data,
+        template_data,
+        project_error,
+    ) = await _resolve_create_project_labels_template(context, project, labels, template, team_id)
+    if project_error:
+        return project_error
 
     # Handle due date
+    due_date_parsed = None
     if due_date:
         validate_date_format("due_date", due_date)
         due_date_parsed = parse_date_string(due_date)
-        if due_date_parsed:
-            create_input["dueDate"] = due_date_parsed.date().isoformat()
 
-    # Handle estimate
-    if estimate:
-        create_input["estimate"] = estimate
+    # Build create input
+    create_input = _build_create_input(
+        title,
+        team_id,
+        description,
+        assignee_id,
+        state_id,
+        project_data,
+        label_data,
+        template_data,
+        parent_issue_data,
+        due_date_parsed,
+        estimate,
+    )
+
+    # Handle cycle/sprint with intelligent resolution
+    cycle_error = await _handle_create_cycle(context, cycle, team_id, client, create_input, status)
+    if cycle_error:
+        return cycle_error
 
     # Create the issue
     result = await client.create_issue(create_input)
@@ -1135,9 +1025,7 @@ async def add_comment_to_issue(
         str,
         "The Linear issue ID or identifier (e.g. 'FE-123', 'API-456') to add a comment to.",
     ],
-    comment: Annotated[
-        str, "The comment text to add to the issue. Supports markdown formatting."
-    ],
+    comment: Annotated[str, "The comment text to add to the issue. Supports markdown formatting."],
 ) -> Annotated[dict[str, Any], "Comment creation result"]:
     """Add a comment to a Linear issue
 
@@ -1185,7 +1073,10 @@ async def get_templates(
     context: ToolContext,
     team: Annotated[
         str | None,
-        "Team name or ID to filter templates by. If not provided, returns templates from all teams.",
+        (
+            "Team name or ID to filter templates by. If not provided, "
+            "returns templates from all teams."
+        ),
     ] = None,
 ) -> Annotated[dict[str, Any], "Available issue templates"]:
     """Get available issue templates for creating structured issues
@@ -1220,9 +1111,7 @@ async def get_templates(
             if team_data:
                 team_id = team_data["id"]
             else:
-                return {
-                    "error": f"Team '{team}' not found. Please check the team name."
-                }
+                return {"error": f"Team '{team}' not found. Please check the team name."}
 
     # Get templates
     templates_response = await client.get_templates(team_id=team_id)
@@ -1240,11 +1129,448 @@ async def get_templates(
     if not cleaned_templates:
         if team:
             response["message"] = (
-                f"No templates found for team '{team}'. Templates may not be set up for this team yet."
+                f"No templates found for team '{team}'. Templates may not "
+                "be set up for this team yet."
             )
         else:
-            response["message"] = (
-                "No templates found in any team. Templates may not be set up yet."
-            )
+            response["message"] = "No templates found in any team. Templates may not be set up yet."
 
     return response
+
+
+async def _handle_update_labels(context, labels, team_id, update_input):
+    """Handle labels resolution for update_issue"""
+    if labels is not None:
+        if not labels:  # Empty list - remove all labels
+            update_input["labelIds"] = []
+        else:
+            label_data = await resolve_labels_with_autocreate(context, labels, team_id)
+            update_input["labelIds"] = [label["id"] for label in label_data]
+
+
+async def _handle_update_project(context, project, update_input):
+    """Handle project resolution for update_issue"""
+    if project is not None:
+        if project.lower() == "none":
+            update_input["projectId"] = None
+        elif project.startswith("project_"):  # Assume it's an ID
+            update_input["projectId"] = project
+        else:
+            project_data = await resolve_project_by_name(context, project)
+            if project_data:
+                update_input["projectId"] = project_data["id"]
+
+
+def _handle_update_due_date(due_date, update_input):
+    """Handle due date processing for update_issue"""
+    if due_date is not None:
+        if due_date.lower() == "none":
+            update_input["dueDate"] = None
+        else:
+            validate_date_format("due_date", due_date)
+            due_date_parsed = parse_date_string(due_date)
+            if due_date_parsed:
+                update_input["dueDate"] = due_date_parsed.date().isoformat()
+
+
+def _handle_update_estimate(estimate, update_input):
+    """Handle estimate processing for update_issue"""
+    if estimate is not None:
+        update_input["estimate"] = estimate if estimate > 0 else None
+
+
+async def _handle_closure_comment(context, client, issue_id, status, description):
+    """Handle special closure behavior - add description as comment when closing"""
+    if status and description:
+        # Check if this is a completion/closure status
+        closure_status_names = [
+            "done",
+            "completed",
+            "closed",
+            "resolved",
+            "finished",
+            "complete",
+            "shipped",
+            "released",
+            "deployed",
+            "merged",
+            "fixed",
+            "solved",
+        ]
+
+        is_closure_status = any(
+            closure_name in status.lower() for closure_name in closure_status_names
+        )
+
+        if is_closure_status:
+            # Add the description as a closure comment
+            try:
+                comment_result = await client.create_comment(issue_id, description)
+                if not comment_result.get("success"):
+                    context.logger.warning("Failed to add closure comment")
+            except Exception as e:
+                context.logger.warning(f"Comment creation failed: {e}")
+            return True  # Indicates we handled description as comment
+
+    return False  # Description should be handled normally
+
+
+def _build_update_response(result, issue_id, update_input, close_reason_added, status):
+    """Build the response for update_issue"""
+    if result["success"]:
+        # Create a helpful message based on what was updated
+        message = f"Successfully updated issue {issue_id}"
+
+        # Add context about closure comment
+        if close_reason_added:
+            message += " and added closure reason as comment"
+
+        # Add context about auto-transitions
+        if "cycleId" in update_input and "stateId" in update_input and status is None:
+            message += " (automatically moved from Backlog to To Do for sprint)"
+
+        return {
+            "success": True,
+            "message": message,
+            "issue": clean_issue_data(result["issue"]),
+            "updated_fields": list(update_input.keys()),
+        }
+    else:
+        return {
+            "success": False,
+            "error": "Failed to update issue",
+        }
+
+
+async def _resolve_create_team(context, team, parent_issue_data):
+    """Resolve team for create_issue with parent issue inheritance logic"""
+    client = LinearClient(context.get_auth_token_or_empty())
+
+    if parent_issue_data:
+        # For sub-issues, inherit the team from the parent issue
+        team_id = parent_issue_data["team"]["id"]
+        parent_team_name = parent_issue_data["team"]["name"]
+
+        # If user specified a different team, warn but use parent's team for consistency
+        if team.startswith("team_"):
+            if team != team_id:
+                return None, {
+                    "error": (
+                        f"Sub-issue must be created in the same team as parent issue. "
+                        f"Parent issue {parent_issue_data.get('identifier', 'unknown')} is in team "
+                        f"'{parent_team_name}'. Sub-issues cannot be in different teams."
+                    )
+                }
+        else:
+            # Check if user-specified team matches parent's team
+            user_team_data = await resolve_team_by_name(context, team)
+            if user_team_data and user_team_data["id"] != team_id:
+                return None, {
+                    "error": (
+                        f"Sub-issue must be created in the same team as parent issue. "
+                        f"Parent issue {parent_issue_data.get('identifier', 'unknown')} is in team "
+                        f"'{parent_team_name}', but you specified team '{team}'. "
+                        "Sub-issues cannot be in different teams."
+                    )
+                }
+        return team_id, None
+    else:
+        # No parent issue, resolve team normally
+        if team.startswith("team_"):  # Assume it's an ID
+            return team, None
+        else:
+            team_data = await resolve_team_by_name(context, team)
+            if team_data:
+                return team_data["id"], None
+            else:
+                # Get available teams to help the user
+                try:
+                    teams_response = await client.get_teams(first=20)
+                    available_teams = teams_response.get("nodes", [])
+
+                    if available_teams:
+                        team_names = [t["name"] for t in available_teams[:10]]
+                        team_list = "', '".join(team_names)
+                        if len(available_teams) > 10:
+                            return None, {
+                                "error": (
+                                    f"Team '{team}' not found. Available teams include: "
+                                    f"'{team_list}' and {len(available_teams) - 10} others. "
+                                    "Use 'get_teams' tool to see all teams, then specify the "
+                                    "correct team name."
+                                )
+                            }
+                        else:
+                            return None, {
+                                "error": (
+                                    f"Team '{team}' not found. Available teams: '{team_list}'. "
+                                    "Please specify one of these existing team names."
+                                )
+                            }
+                    else:
+                        return None, {
+                            "error": (
+                                f"Team '{team}' not found and no teams could be retrieved. "
+                                "Please check the team name or use 'get_teams' tool to see "
+                                "available teams."
+                            )
+                        }
+                except Exception:
+                    return None, {
+                        "error": (
+                            f"Team '{team}' not found. Please check the team name or use "
+                            "'get_teams' tool to see available teams."
+                        )
+                    }
+
+
+async def _resolve_create_assignee(context, assignee):
+    """Resolve assignee for create_issue"""
+    if not assignee:
+        return None, None
+
+    client = LinearClient(context.get_auth_token_or_empty())
+
+    if assignee.lower() == "me":
+        viewer = await client.get_viewer()
+        return viewer["id"], None
+    elif assignee.startswith("user_"):  # Assume it's an ID
+        return assignee, None
+    else:
+        user_data = await resolve_user_by_email_or_name(context, assignee)
+        if user_data:
+            return user_data["id"], None
+        else:
+            return None, {
+                "error": (
+                    f"User not found: {assignee}. Please check the username or "
+                    "email and try again."
+                )
+            }
+
+
+async def _resolve_create_status(context, status, team_id):
+    """Resolve status for create_issue"""
+    if not status:
+        return None, None
+
+    client = LinearClient(context.get_auth_token_or_empty())
+
+    if status.startswith("state_"):  # Assume it's an ID
+        return status, None
+    else:
+        state_data = await resolve_workflow_state_by_name(context, status, team_id)
+        if state_data:
+            return state_data["id"], None
+        else:
+            # Status not found - provide helpful error with available statuses
+            try:
+                available_states = await client.get_workflow_states(team_id=team_id)
+                if available_states and available_states.get("nodes"):
+                    state_names = [s["name"] for s in available_states["nodes"]]
+                    return None, {
+                        "error": (
+                            f"Workflow state '{status}' not found for this team. "
+                            f"Available statuses: {', '.join(state_names)}. You can also "
+                            "create a new workflow state using the 'create_workflow_state' "
+                            "tool if needed."
+                        )
+                    }
+                else:
+                    return None, {
+                        "error": (
+                            f"Workflow state '{status}' not found for this team. "
+                            "Use 'get_workflow_states' to see available statuses or "
+                            "'create_workflow_state' to create new ones."
+                        )
+                    }
+            except Exception:
+                return None, {
+                    "error": (
+                        f"Workflow state '{status}' not found for this team. "
+                        "Use 'get_workflow_states' to see available statuses or "
+                        "'create_workflow_state' to create new ones."
+                    )
+                }
+
+
+async def _handle_create_cycle(context, cycle, team_id, client, create_input, status):
+    """Handle cycle/sprint resolution for create_issue"""
+    if not cycle:
+        return None
+
+    if cycle.startswith("cycle_"):  # Assume it's an ID
+        create_input["cycleId"] = cycle
+    else:
+        # First try relative/intelligent cycle resolution
+        relative_keywords = ["current", "next", "previous", "last", "next week", "next month"]
+        is_relative = (
+            cycle.lower() in relative_keywords
+            or cycle.lower().startswith("in ")
+            or cycle.lower().startswith("in")
+        )
+
+        cycle_data, cycle_error = await _resolve_cycle_data(context, cycle, team_id, client)
+        if cycle_error:
+            return cycle_error
+
+        if cycle_data:
+            create_input["cycleId"] = cycle_data["id"]
+            # Auto-set to "To Do" when creating in a sprint (unless user specified status)
+            if not status:
+                try:
+                    todo_state = await resolve_workflow_state_by_name(context, "To Do", team_id)
+                    if todo_state:
+                        create_input["stateId"] = todo_state["id"]
+                except Exception as e:
+                    context.logger.debug(f"Could not set To Do status for sprint: {e}")
+        else:
+            if is_relative:
+                return {
+                    "error": (
+                        f"No cycle found for '{cycle}'. This could mean no cycles "
+                        "are configured for the team, or no cycle matches the time "
+                        "period specified."
+                    )
+                }
+            else:
+                return {
+                    "error": (
+                        f"Cycle not found: {cycle}. Please check the cycle "
+                        "name/number and try again."
+                    )
+                }
+    return None
+
+
+def _build_create_input(
+    title,
+    team_id,
+    description,
+    assignee_id,
+    state_id,
+    project_data,
+    label_data,
+    template_data,
+    parent_issue_data,
+    due_date_parsed,
+    estimate,
+):
+    """Build the create input dictionary for create_issue"""
+    create_input = {
+        "title": title,
+        "teamId": team_id,
+    }
+
+    if description:
+        create_input["description"] = description
+    if assignee_id:
+        create_input["assigneeId"] = assignee_id
+    if state_id:
+        create_input["stateId"] = state_id
+    if project_data:
+        create_input["projectId"] = project_data["id"]
+    if label_data:
+        create_input["labelIds"] = [label["id"] for label in label_data]
+    if template_data:
+        create_input["templateId"] = template_data["id"]
+    if parent_issue_data:
+        create_input["parentId"] = parent_issue_data["id"]
+    if due_date_parsed:
+        create_input["dueDate"] = due_date_parsed.date().isoformat()
+    if estimate:
+        create_input["estimate"] = estimate
+
+    return create_input
+
+
+async def _resolve_parent_issue(context, parent_issue):
+    """Resolve parent issue for create_issue"""
+    if not parent_issue:
+        return None, None
+
+    if parent_issue.startswith("issue_"):  # Assume it's an ID
+        client = LinearClient(context.get_auth_token_or_empty())
+        parent_issue_data = await client.get_issue(parent_issue)
+        if parent_issue_data:
+            return parent_issue_data, None
+        else:
+            return None, {"error": f"Parent issue not found: {parent_issue}"}
+    else:
+        # Resolve parent issue by identifier
+        parent_issue_data = await resolve_issue_with_team_info(context, parent_issue)
+        if parent_issue_data:
+            return parent_issue_data, None
+        else:
+            return None, {
+                "error": (
+                    f"Parent issue not found: {parent_issue}. Please check the issue "
+                    "identifier (e.g., 'ENG-123') and try again."
+                )
+            }
+
+
+async def _resolve_create_project_labels_template(context, project, labels, template, team_id):
+    """Resolve project, labels, and template for create_issue"""
+    # Resolve project if provided
+    project_data = None
+    if project:
+        if project.startswith("project_"):  # Assume it's an ID
+            project_data = {"id": project}
+        else:
+            project_data = await resolve_project_by_name(context, project)
+
+    # Resolve labels if provided
+    label_data = None
+    if labels:
+        label_data = await resolve_labels_with_autocreate(context, labels, team_id)
+
+    # Resolve template if provided
+    template_data = None
+    if template:
+        if template.startswith("template_"):  # Assume it's an ID
+            template_data = {"id": template}
+        else:
+            # Resolve template by name within the team context
+            template_data = await resolve_template_by_name(context, template, team_id)
+            if not template_data:
+                return (
+                    None,
+                    None,
+                    None,
+                    {
+                        "error": (
+                            f"Template not found: {template}. Please check the template "
+                            "name and try again."
+                        )
+                    },
+                )
+
+    return project_data, label_data, template_data, None
+
+
+def _handle_update_priority(priority, update_input):
+    """Handle priority processing for update_issue"""
+    if priority is not None:
+        priority_value = normalize_priority(priority)
+        if priority_value is not None:
+            update_input["priority"] = int(priority_value)
+
+
+def _build_and_validate_update_input(title, description, priority, update_input):
+    """Build and validate the update input dictionary"""
+    if title:
+        update_input["title"] = title
+    if description:
+        update_input["description"] = description
+
+    # Handle priority
+    _handle_update_priority(priority, update_input)
+
+    # Remove None values
+    update_input = remove_none_values(update_input)
+
+    if not update_input:
+        return None, {"error": "No valid fields provided for update"}
+
+    return update_input, None
