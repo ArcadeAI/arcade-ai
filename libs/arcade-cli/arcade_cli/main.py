@@ -55,7 +55,7 @@ cli = typer.Typer(
     cls=OrderCommands,
     add_completion=False,
     no_args_is_help=True,
-    pretty_exceptions_enable=False,
+    pretty_exceptions_enable=True,
     pretty_exceptions_show_locals=False,
     pretty_exceptions_short=True,
     rich_markup_mode="markdown",
@@ -68,11 +68,16 @@ cli.add_typer(
     help="Manage deployments of tool servers (logs, list, etc)",
     rich_help_panel="Deployment",
 )
+
+
 console = Console()
 
 
 def handle_cli_error(
-    message: str, error: Exception | None = None, debug: bool = True, should_exit: bool = True
+    message: str,
+    error: Optional[Exception] = None,
+    debug: bool = True,
+    should_exit: bool = True,
 ) -> None:
     """Handle CLI error reporting with optional debug traceback and exit."""
     if error and debug:
@@ -225,12 +230,28 @@ def show(
         "--no-tls",
         help="Whether to disable TLS for the connection to the Arcade Engine.",
     ),
+    worker: bool = typer.Option(
+        False,
+        "--worker",
+        "-w",
+        help="Show full worker response structure including error, logs, and authorization fields.",
+    ),
     debug: bool = typer.Option(False, "--debug", "-d", help="Show debug information"),
 ) -> None:
     """
     Show the available toolkits or detailed information about a specific tool.
     """
-    show_logic(toolkit, tool, host, local, port, force_tls, force_no_tls, debug)
+    show_logic(
+        toolkit=toolkit,
+        tool=tool,
+        host=host,
+        local=local,
+        port=port,
+        force_tls=force_tls,
+        force_no_tls=force_no_tls,
+        worker=worker,
+        debug=debug,
+    )
 
 
 @cli.command(
@@ -250,7 +271,7 @@ def chat(
         "--host",
         help="The Arcade Engine address to send chat requests to.",
     ),
-    port: int = typer.Option(
+    port: Optional[int] = typer.Option(
         None,
         "-p",
         "--port",
@@ -388,7 +409,7 @@ def evals(
         "--cloud",
         help="Whether to run evaluations against the Arcade Cloud Engine. Overrides the 'host' option.",
     ),
-    port: int = typer.Option(
+    port: Optional[int] = typer.Option(
         None,
         "-p",
         "--port",
@@ -509,10 +530,14 @@ def serve(
         show_default=True,
     ),
     port: int = typer.Option(
-        "8002", "-p", "--port", help="Port for the app, defaults to ", show_default=True
+        "8002",
+        "-p",
+        "--port",
+        help="Port for the app, defaults to ",
+        show_default=True,
     ),
     disable_auth: bool = typer.Option(
-        False,
+        True,
         "--no-auth",
         help="Disable authentication for the worker. Not recommended for production.",
         show_default=True,
@@ -559,7 +584,9 @@ def serve(
 
 
 @cli.command(
-    help="Start a server with locally installed Arcade tools", rich_help_panel="Launch", hidden=True
+    help="Start a server with locally installed Arcade tools",
+    rich_help_panel="Launch",
+    hidden=True,
 )
 def workerup(
     host: str = typer.Option(
@@ -568,7 +595,11 @@ def workerup(
         show_default=True,
     ),
     port: int = typer.Option(
-        "8002", "-p", "--port", help="Port for the app, defaults to ", show_default=True
+        "8002",
+        "-p",
+        "--port",
+        help="Port for the app, defaults to ",
+        show_default=True,
     ),
     disable_auth: bool = typer.Option(
         False,
@@ -610,7 +641,10 @@ def workerup(
 @cli.command(help="Deploy toolkits to Arcade Cloud", rich_help_panel="Deployment")
 def deploy(
     deployment_file: str = typer.Option(
-        "worker.toml", "--deployment-file", "-d", help="The deployment file to deploy."
+        "worker.toml",
+        "--deployment-file",
+        "-d",
+        help="The deployment file to deploy.",
     ),
     cloud_host: str = typer.Option(
         PROD_CLOUD_HOST,
@@ -619,7 +653,7 @@ def deploy(
         help="The Arcade Cloud host to deploy to.",
         hidden=True,
     ),
-    cloud_port: int = typer.Option(
+    cloud_port: Optional[int] = typer.Option(
         None,
         "--cloud-port",
         "-cp",
@@ -632,7 +666,7 @@ def deploy(
         "-h",
         help="The Arcade Engine host to register the worker to.",
     ),
-    port: int = typer.Option(
+    port: Optional[int] = typer.Option(
         None,
         "--port",
         "-p",
@@ -674,7 +708,10 @@ def deploy(
             try:
                 # Attempt to deploy worker
                 worker.request().execute(cloud_client, engine_client)
-                console.log(f"✅ Worker '{worker.config.id}' deployed successfully.", style="dim")
+                console.log(
+                    f"✅ Worker '{worker.config.id}' deployed successfully.",
+                    style="dim",
+                )
             except Exception as e:
                 handle_cli_error(f"Failed to deploy worker '{worker.config.id}'", e, debug)
 
