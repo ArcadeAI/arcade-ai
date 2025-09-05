@@ -5,13 +5,11 @@ import traceback
 import uuid
 import webbrowser
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import httpx
 import typer
 from arcadepy import Arcade
-from arcadepy.types import AuthorizationResponse
-from openai import OpenAI, OpenAIError
 from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
@@ -26,11 +24,7 @@ from arcade_cli.constants import (
     PROD_ENGINE_HOST,
 )
 from arcade_cli.deployment import Deployment
-from arcade_cli.display import (
-    display_arcade_chat_header,
-    display_eval_results,
-    display_tool_messages,
-)
+from arcade_cli.display import display_eval_results
 from arcade_cli.show import show_logic
 from arcade_cli.toolkit_docs import generate_toolkit_docs
 from arcade_cli.utils import (
@@ -38,12 +32,6 @@ from arcade_cli.utils import (
     compute_base_url,
     compute_login_url,
     get_eval_files,
-    get_today_context,
-    get_user_input,
-    handle_chat_interaction,
-    handle_tool_authorization,
-    handle_user_command,
-    is_authorization_pending,
     load_eval_suites,
     log_engine_health,
     require_dependency,
@@ -260,132 +248,7 @@ def show(
     )
 
 
-@cli.command(
-    help="Start a chat with a model in the terminal to test tools",
-    rich_help_panel="Tool Development",
-)
-def chat(
-    model: str = typer.Option("gpt-4o", "-m", "--model", help="The model to use for prediction."),
-    stream: bool = typer.Option(
-        False, "-s", "--stream", is_flag=True, help="Stream the tool output."
-    ),
-    prompt: str = typer.Option(None, "--prompt", help="The system prompt to use for the chat."),
-    debug: bool = typer.Option(False, "--debug", "-d", help="Show debug information"),
-    host: str = typer.Option(
-        PROD_ENGINE_HOST,
-        "-h",
-        "--host",
-        help="The Arcade Engine address to send chat requests to.",
-    ),
-    port: Optional[int] = typer.Option(
-        None,
-        "-p",
-        "--port",
-        help="The port of the Arcade Engine.",
-    ),
-    force_tls: bool = typer.Option(
-        False,
-        "--tls",
-        help="Whether to force TLS for the connection to the Arcade Engine. If not specified, the connection will use TLS if the engine URL uses a 'https' scheme.",
-    ),
-    force_no_tls: bool = typer.Option(
-        False,
-        "--no-tls",
-        help="Whether to disable TLS for the connection to the Arcade Engine.",
-    ),
-) -> None:
-    """
-    Chat with a language model.
-    """
-    try:
-        import readline
-    except ImportError:
-        console.print(
-            "Readline is not available on this platform. Command history will be limited.",
-            style="dim",
-        )
-
-    config = validate_and_get_config()
-    base_url = compute_base_url(force_tls, force_no_tls, host, port)
-
-    client = Arcade(api_key=config.api.key, base_url=base_url)
-    user_email = config.user.email if config.user else None
-
-    try:
-        # start messages conversation
-        history: list[dict[str, Any]] = []
-
-        # Ground the LLM with today's date and day of the week to help when calling date-related tools
-        # in case the user refers to relative dates (e.g. next Monday, last month, etc)
-        today_context = get_today_context()
-
-        if prompt:
-            prompt = f"{today_context} {prompt}"
-        else:
-            prompt = today_context
-
-            history.append({"role": "system", "content": prompt})
-
-        display_arcade_chat_header(base_url, stream)
-
-        # Try to hit /health endpoint on engine and warn if it is down
-        log_engine_health(client)
-
-        while True:
-            console.print(
-                f"\n[magenta][bold]User[/bold] {user_email}: [/magenta]"
-                + "([bold][default]/?[/default][/bold] for help)"
-            )
-
-            user_input = get_user_input()
-
-            # Add the input to history
-            readline.add_history(user_input)
-
-            if handle_user_command(
-                user_input, history, host, port, force_tls, force_no_tls, show_logic
-            ):
-                continue
-
-            history.append({"role": "user", "content": user_input})
-
-            try:
-                # TODO fixup configuration to remove this + "/v1" workaround
-                openai_client = OpenAI(api_key=config.api.key, base_url=base_url + "/v1")
-                chat_result = handle_chat_interaction(
-                    openai_client, model, history, user_email, stream
-                )
-
-                history = chat_result.history
-                tool_messages = chat_result.tool_messages
-                tool_authorization = chat_result.tool_authorization
-
-                # wait for tool authorizations to complete, if any
-                if tool_authorization and is_authorization_pending(tool_authorization):
-                    chat_result = handle_tool_authorization(
-                        client,
-                        AuthorizationResponse.model_validate(tool_authorization),
-                        history,
-                        openai_client,
-                        model,
-                        user_email,
-                        stream,
-                    )
-                    history = chat_result.history
-                    tool_messages = chat_result.tool_messages
-
-            except OpenAIError as e:
-                handle_cli_error("Arcade Chat failed", e, debug, should_exit=False)
-                continue
-            if debug:
-                display_tool_messages(tool_messages)
-
-    except KeyboardInterrupt:
-        console.print("Chat stopped by user.", style="bold blue")
-        typer.Exit()
-
-    except RuntimeError as e:
-        handle_cli_error("Failed to run tool", e, debug)
+# Chat command removed - use local MCP clients instead
 
 
 @cli.command(help="Run tool calling evaluations", rich_help_panel="Tool Development")
@@ -525,123 +388,64 @@ def evals(
         handle_cli_error("Failed to run evaluations", e, debug)
 
 
-@cli.command(
-    help="Start tool server worker with locally installed tools",
-    rich_help_panel="Launch",
-)
-def serve(
-    host: str = typer.Option(
-        "127.0.0.1",
-        help="Host for the app, from settings by default.",
-        show_default=True,
+# Serve command removed - use arcade-mcp package instead
+
+
+# Workerup command removed - use arcade-mcp package instead
+
+
+@cli.command(help="Connect MCP clients to your server", rich_help_panel="Tool Development")
+def connect(
+    client: str = typer.Argument(
+        ...,
+        help="The MCP client to configure (claude, cursor, vscode)",
+    ),
+    server_name: Optional[str] = typer.Option(
+        None,
+        "--server",
+        "-s",
+        help="Name of the server to connect to (defaults to current directory name)",
+    ),
+    from_local: bool = typer.Option(
+        False,
+        "--from-local",
+        help="Connect to a local MCP server",
+        is_flag=True,
+    ),
+    from_arcade: bool = typer.Option(
+        False,
+        "--from-arcade",
+        help="Connect to an Arcade Cloud MCP server",
+        is_flag=True,
     ),
     port: int = typer.Option(
-        "8002",
-        "-p",
+        8000,
         "--port",
-        help="Port for the app, defaults to ",
-        show_default=True,
-    ),
-    disable_auth: bool = typer.Option(
-        True,
-        "--no-auth",
-        help="Disable authentication for the worker. Not recommended for production.",
-        show_default=True,
-    ),
-    otel_enable: bool = typer.Option(
-        False, "--otel-enable", help="Send logs to OpenTelemetry", show_default=True
-    ),
-    mcp: bool = typer.Option(
-        False, "--mcp", help="Run as a local MCP server over stdio", show_default=True
-    ),
-    debug: bool = typer.Option(False, "--debug", "-d", help="Show debug information"),
-    reload: bool = typer.Option(
-        False,
-        "--reload",
-        help="Enable auto-reloading when toolkit or server files change.",
-        show_default=True,
-    ),
-) -> None:
-    """
-    Start a local Arcade Worker server.
-    """
-    require_dependency(
-        package_name="arcade_serve",
-        command_name="serve",
-        install_command=r"pip install 'arcade-serve'",
-    )
-
-    from arcade_cli.serve import serve_default_worker
-
-    try:
-        serve_default_worker(
-            host,
-            port,
-            disable_auth=disable_auth,
-            enable_otel=otel_enable,
-            debug=debug,
-            mcp=mcp,
-            reload=reload,
-        )
-    except KeyboardInterrupt:
-        typer.Exit()
-    except Exception as e:
-        handle_cli_error("Failed to start Arcade Worker", e, debug)
-
-
-@cli.command(
-    help="Start a server with locally installed Arcade tools",
-    rich_help_panel="Launch",
-    hidden=True,
-)
-def workerup(
-    host: str = typer.Option(
-        "127.0.0.1",
-        help="Host for the app, from settings by default.",
-        show_default=True,
-    ),
-    port: int = typer.Option(
-        "8002",
         "-p",
-        "--port",
-        help="Port for the app, defaults to ",
-        show_default=True,
-    ),
-    disable_auth: bool = typer.Option(
-        False,
-        "--no-auth",
-        help="Disable authentication for the worker. Not recommended for production.",
-        show_default=True,
-    ),
-    otel_enable: bool = typer.Option(
-        False, "--otel-enable", help="Send logs to OpenTelemetry", show_default=True
+        help="Port for local servers",
     ),
     debug: bool = typer.Option(False, "--debug", "-d", help="Show debug information"),
 ) -> None:
     """
-    Starts the worker with host, port, and reload options. Uses
-    Uvicorn as ASGI worker. Parameters allow runtime configuration.
-    """
-    require_dependency(
-        package_name="arcade_serve",
-        command_name="worker",
-        install_command=r"pip install 'arcade-serve'",
-    )
+    Configure MCP clients to connect to your server.
 
-    from arcade_cli.serve import serve_default_worker
+    Examples:
+        arcade connect claude --from-local
+        arcade connect cursor --from-local --port 8080
+        arcade connect claude --from-arcade --server my-toolkit
+    """
+    from arcade_cli.connect import connect_client
 
     try:
-        serve_default_worker(
-            host,
-            port,
-            disable_auth=disable_auth,
-            enable_otel=otel_enable,
-            debug=debug,
+        connect_client(
+            client=client,
+            server_name=server_name,
+            from_local=from_local,
+            from_arcade=from_arcade,
+            port=port,
         )
-    except KeyboardInterrupt:
-        typer.Exit()
     except Exception as e:
-        handle_cli_error("Failed to start Arcade Toolkit Server", e, debug)
+        handle_cli_error(f"Failed to configure {client}", e, debug)
 
 
 @cli.command(help="Deploy toolkits to Arcade Cloud", rich_help_panel="Deployment")
@@ -712,6 +516,25 @@ def deploy(
         for worker in deployment.worker:
             console.log(f"Deploying '{worker.config.id}...'", style="dim")
             try:
+                # Discover and upload secrets
+                required_secrets = worker.get_required_secrets()
+                for secret_key in required_secrets:
+                    secret_value = os.getenv(secret_key)
+                    if not secret_value:
+                        console.log(
+                            f"⚠️ Secret '{secret_key}' not found in environment, skipping.",
+                            style="yellow",
+                        )
+                        continue
+
+                    console.log(f"  - Uploading secret '{secret_key}'...", style="dim")
+                    try:
+                        engine_client.secrets.upsert(
+                            secret_key, value=secret_value, binding={"type": "static"}
+                        )
+                    except Exception as e:
+                        handle_cli_error(f"Failed to upload secret '{secret_key}'", e, debug)
+
                 # Attempt to deploy worker
                 worker.request().execute(cloud_client, engine_client)
                 console.log(
@@ -792,7 +615,10 @@ def dashboard(
 )
 def docs(
     toolkit_name: str = typer.Option(
-        ..., "--toolkit-name", "-n", help="The name of the toolkit to generate documentation for."
+        ...,
+        "--toolkit-name",
+        "-n",
+        help="The name of the toolkit to generate documentation for.",
     ),
     toolkit_dir: str = typer.Option(
         ...,
@@ -897,7 +723,10 @@ def docs(
 )
 def generate_toolkit_docs_command(
     toolkit_name: str = typer.Option(
-        ..., "--toolkit-name", "-n", help="The name of the toolkit to generate documentation for."
+        ...,
+        "--toolkit-name",
+        "-n",
+        help="The name of the toolkit to generate documentation for.",
     ),
     toolkit_dir: str = typer.Option(
         ...,
@@ -978,8 +807,6 @@ def main_callback(
     excluded_commands = {
         login.__name__,
         logout.__name__,
-        serve.__name__,
-        workerup.__name__,
         dashboard.__name__,
     }
     if ctx.invoked_subcommand in excluded_commands:

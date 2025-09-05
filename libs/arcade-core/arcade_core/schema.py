@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    # Import notification types only for type checking to avoid circular imports
+    from arcade_core.notifications import ToolLogger, ToolNotifier
 
 # allow for custom tool name separator
 TOOL_NAME_SEPARATOR = os.getenv("ARCADE_TOOL_NAME_SEPARATOR", ".")
@@ -21,10 +27,10 @@ class ValueSchema(BaseModel):
     enum: list[str] | None = None
     """The list of possible values for the value, if it is a closed list."""
 
-    properties: dict[str, "ValueSchema"] | None = None
+    properties: dict[str, ValueSchema] | None = None
     """For object types (json), the schema of nested properties."""
 
-    inner_properties: dict[str, "ValueSchema"] | None = None
+    inner_properties: dict[str, ValueSchema] | None = None
     """For array types with json items, the schema of properties for each array item."""
 
     description: str | None = None
@@ -198,7 +204,7 @@ class FullyQualifiedName:
             (self.toolkit_version or "").lower(),
         ))
 
-    def equals_ignoring_version(self, other: "FullyQualifiedName") -> bool:
+    def equals_ignoring_version(self, other: FullyQualifiedName) -> bool:
         """Check if two fully-qualified tool names are equal, ignoring the version."""
         return (
             self.name.lower() == other.name.lower()
@@ -206,7 +212,7 @@ class FullyQualifiedName:
         )
 
     @staticmethod
-    def from_toolkit(tool_name: str, toolkit: ToolkitDefinition) -> "FullyQualifiedName":
+    def from_toolkit(tool_name: str, toolkit: ToolkitDefinition) -> FullyQualifiedName:
         """Creates a fully-qualified tool name from a tool name and a ToolkitDefinition."""
         return FullyQualifiedName(tool_name, toolkit.name, toolkit.version)
 
@@ -309,6 +315,45 @@ class ToolContext(BaseModel):
 
     user_id: str | None = None
     """The user ID for the tool invocation (if any)."""
+
+    progress_token: str | int | None = None
+    """Progress token from the client request for progress notifications."""
+
+    # Private fields for notification support
+    _log: ToolLogger | None = None
+    _notify: ToolNotifier | None = None
+    _min_log_level: str = "info"  # Default minimum log level
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def log(self) -> ToolLogger:
+        """Get the tool logger for sending log notifications."""
+        if self._log is None:
+            # Import here to avoid circular imports
+            from arcade_core.notifications import NoOpLogger
+
+            self._log = NoOpLogger()
+        return self._log
+
+    @property
+    def notify(self) -> ToolNotifier:
+        """Get the tool notifier for progress and resource notifications."""
+        if self._notify is None:
+            # Import here to avoid circular imports
+            from arcade_core.notifications import NoOpNotifier
+
+            self._notify = NoOpNotifier()
+        return self._notify
+
+    def set_notification_support(self, logger: ToolLogger, notifier: ToolNotifier) -> None:
+        """Set the notification support for this context."""
+        self._log = logger
+        self._notify = notifier
+
+    def set_min_log_level(self, level: str) -> None:
+        """Set the minimum log level for filtering."""
+        self._min_log_level = level
 
     def get_auth_token_or_empty(self) -> str:
         """Retrieve the authorization token, or return an empty string if not available."""
