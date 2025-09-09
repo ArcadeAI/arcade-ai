@@ -1,3 +1,7 @@
+from arcade_core.schema import (
+    ToolCallRequest,
+    ToolCallResponse,
+)
 from opentelemetry import trace
 
 from arcade_serve.core.common import (
@@ -5,8 +9,6 @@ from arcade_serve.core.common import (
     HealthCheckResponse,
     RequestData,
     Router,
-    ToolCallRequest,
-    ToolCallResponse,
     Worker,
     WorkerComponent,
 )
@@ -33,10 +35,10 @@ class CatalogComponent(WorkerComponent):
 
     async def __call__(self, request: RequestData) -> CatalogResponse:
         """
-        Handle the request to get the catalog.
+        Handle the request to get the catalog of tools.
         """
         tracer = trace.get_tracer(__name__)
-        with tracer.start_as_current_span("Catalog"):
+        with tracer.start_as_current_span("GetCatalog"):
             return self.worker.get_catalog()
 
 
