@@ -17,6 +17,7 @@ from rich.markup import escape
 from rich.text import Text
 from tqdm import tqdm
 
+import arcade_cli.secret as secret
 import arcade_cli.worker as worker
 from arcade_cli.authn import LocalAuthCallbackServer, check_existing_login
 from arcade_cli.constants import (
@@ -35,6 +36,7 @@ from arcade_cli.show import show_logic
 from arcade_cli.toolkit_docs import generate_toolkit_docs
 from arcade_cli.utils import (
     OrderCommands,
+    Provider,
     compute_base_url,
     compute_login_url,
     get_eval_files,
@@ -47,6 +49,7 @@ from arcade_cli.utils import (
     load_eval_suites,
     log_engine_health,
     require_dependency,
+    resolve_provider_api_key,
     validate_and_get_config,
     version_callback,
 )
@@ -67,6 +70,13 @@ cli.add_typer(
     name="worker",
     help="Manage deployments of tool servers (logs, list, etc)",
     rich_help_panel="Deployment",
+)
+
+cli.add_typer(
+    secret.app,
+    name="secret",
+    help="Manage tool secrets in the cloud (set, unset, list)",
+    rich_help_panel="Admin",
 )
 
 
@@ -179,14 +189,23 @@ def new(
     ),
     directory: str = typer.Option(os.getcwd(), "--dir", help="tools directory path"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Show debug information"),
+    full: bool = typer.Option(
+        False,
+        "--full",
+        "-f",
+        help="Create a toolkit package with a full scaffolding (includes evals, tests, license, etc)",
+    ),
 ) -> None:
     """
     Creates a new toolkit with the given name, description, and result type.
     """
-    from arcade_cli.new import create_new_toolkit
+    from arcade_cli.new import create_new_toolkit, create_new_toolkit_minimal
 
     try:
-        create_new_toolkit(directory, toolkit_name)
+        if not full:
+            create_new_toolkit_minimal(directory, toolkit_name)
+        else:
+            create_new_toolkit(directory, toolkit_name)
     except Exception as e:
         handle_cli_error("Failed to create new Toolkit", e, debug)
 
@@ -297,6 +316,9 @@ def chat(
     """
     Chat with a language model.
     """
+    console.log(
+        "⚠️ This command is deprecated and will be removed in a future version.", style="yellow"
+    )
     try:
         import readline
     except ImportError:
@@ -502,8 +524,133 @@ def evals(
                     suite_func(
                         config=config,
                         base_url=base_url,
+                        openai_api_key=None,
                         model=model,
                         max_concurrency=max_concurrent,
+                    )
+                )
+                tasks.append(task)
+
+        # Track progress and results as suite functions complete
+        with tqdm(total=len(tasks), desc="Evaluations Progress") as pbar:
+            results = []
+            for f in asyncio.as_completed(tasks):
+                results.append(await f)
+                pbar.update(1)
+
+        # TODO error handling on each eval
+        all_evaluations.extend(results)
+        display_eval_results(all_evaluations, show_details=show_details)
+
+    try:
+        asyncio.run(run_evaluations())
+    except Exception as e:
+        handle_cli_error("Failed to run evaluations", e, debug)
+
+
+@cli.command(help="Run tool calling evaluations", rich_help_panel="Tool Development")
+def local_evals(
+    directory: str = typer.Argument(".", help="Directory containing evaluation files"),
+    show_details: bool = typer.Option(False, "--details", "-d", help="Show detailed results"),
+    max_concurrent: int = typer.Option(
+        1,
+        "--max-concurrent",
+        "-c",
+        help="Maximum number of concurrent evaluations (default: 1)",
+    ),
+    models: str = typer.Option(
+        "gpt-4o",
+        "--models",
+        "-m",
+        help="The models to use for evaluation (default: gpt-4o). Use commas to separate multiple models. All models must belong to the same provider.",
+    ),
+    provider: Provider = typer.Option(
+        Provider.OPENAI,
+        "--provider",
+        "-p",
+        help="The provider of the models to use for evaluation.",
+    ),
+    provider_api_key: str = typer.Option(
+        None,
+        "--provider-api-key",
+        "-k",
+        help="The model provider API key. If not provided, will look for the appropriate environment variable based on the provider (e.g., OPENAI_API_KEY for openai provider), first in the current environment, then in the current working directory's .env file.",
+    ),
+    debug: bool = typer.Option(False, "--debug", help="Show debug information"),
+) -> None:
+    """
+    Find all files starting with 'eval_' in the given directory,
+    execute any functions decorated with @tool_eval, and display the results.
+    """
+    require_dependency(
+        package_name="arcade_evals",
+        command_name="evals",
+        install_command=r"pip install 'arcade-ai\[evals]'",
+    )
+    # Although Evals does not depend on the TDK, some evaluations import the
+    # ToolCatalog class from the TDK instead of from arcade_core, so we require
+    # the TDK to run the evals CLI command to avoid possible import errors.
+    require_dependency(
+        package_name="arcade_tdk",
+        command_name="evals",
+        install_command=r"pip install arcade-tdk",
+    )
+
+    models_list = models.split(",")  # Use 'models_list' to avoid shadowing
+
+    # Resolve the API key for the provider
+    resolved_api_key = resolve_provider_api_key(provider, provider_api_key)
+    if not resolved_api_key:
+        provider_env_vars = {
+            Provider.OPENAI: "OPENAI_API_KEY",
+        }
+        env_var_name = provider_env_vars.get(provider, f"{provider.upper()}_API_KEY")
+        handle_cli_error(
+            f"API key not found for provider '{provider.value}'. "
+            f"Please provide it via --provider-api-key argument, set the {env_var_name} environment variable, "
+            f"or add it to a .env file in the current directory.",
+            should_exit=True,
+        )
+
+    eval_files = get_eval_files(directory)
+    if not eval_files:
+        return
+
+    console.print("\nRunning evaluations", "bold")
+
+    # Use the new function to load eval suites
+    eval_suites = load_eval_suites(eval_files)
+
+    if not eval_suites:
+        console.print("No evaluation suites to run.", style="bold yellow")
+        return
+
+    if show_details:
+        suite_label = "suite" if len(eval_suites) == 1 else "suites"
+        console.print(
+            f"\nFound {len(eval_suites)} {suite_label} in the evaluation files.",
+            style="bold",
+        )
+
+    async def run_evaluations() -> None:
+        all_evaluations = []
+        tasks = []
+        for suite_func in eval_suites:
+            console.print(
+                Text.assemble(
+                    ("Running evaluations in ", "bold"),
+                    (suite_func.__name__, "bold blue"),
+                )
+            )
+            for model in models_list:
+                task = asyncio.create_task(
+                    suite_func(
+                        config=None,
+                        base_url=None,
+                        openai_api_key=resolved_api_key,
+                        model=model,
+                        max_concurrency=max_concurrent,
+                        is_local=True,
                     )
                 )
                 tasks.append(task)
@@ -528,6 +675,7 @@ def evals(
 @cli.command(
     help="Start tool server worker with locally installed tools",
     rich_help_panel="Launch",
+    hidden=True,
 )
 def serve(
     host: str = typer.Option(
@@ -565,6 +713,9 @@ def serve(
     """
     Start a local Arcade Worker server.
     """
+    console.log(
+        "⚠️ This command is deprecated and will be removed in a future version.", style="yellow"
+    )
     require_dependency(
         package_name="arcade_serve",
         command_name="serve",
@@ -587,6 +738,71 @@ def serve(
         typer.Exit()
     except Exception as e:
         handle_cli_error("Failed to start Arcade Worker", e, debug)
+
+
+@cli.command(
+    help="Configure MCP clients to connect to your server", rich_help_panel="Tool Development"
+)
+def configure(
+    client: str = typer.Argument(
+        ...,
+        help="The MCP client to configure (claude, cursor, vscode)",
+    ),
+    server_name: Optional[str] = typer.Option(
+        None,
+        "--server",
+        "-s",
+        help="Name of the server to connect to (defaults to current directory name)",
+    ),
+    from_local: bool = typer.Option(
+        False,
+        "--from-local",
+        help="Connect to a local MCP server",
+        is_flag=True,
+    ),
+    from_arcade: bool = typer.Option(
+        False,
+        "--from-arcade",
+        help="Connect to an Arcade Cloud MCP server",
+        is_flag=True,
+    ),
+    port: int = typer.Option(
+        8000,
+        "--port",
+        "-p",
+        help="Port for local servers",
+    ),
+    path: Optional[Path] = typer.Option(
+        None,
+        "--path",
+        "-f",
+        exists=False,
+        help="Optional path to a specific MCP client config file (overrides default path)",
+    ),
+    debug: bool = typer.Option(False, "--debug", "-d", help="Show debug information"),
+) -> None:
+    """
+    Configure MCP clients to connect to your server.
+
+    Examples:
+        arcade configure claude --from-local
+        arcade configure cursor --from-local --port 8080
+        arcade configure vscode --from-local --path .vscode/mcp.json
+        arcade configure claude --from-arcade --server my-toolkit
+    """
+    from arcade_cli.configure import configure_client
+
+    try:
+        configure_client(
+            client=client,
+            server_name=server_name,
+            from_local=from_local,
+            from_arcade=from_arcade,
+            port=port,
+            path=path,
+        )
+    except Exception as e:
+        handle_cli_error(f"Failed to configure {client}", e, debug)
 
 
 @cli.command(
@@ -622,6 +838,9 @@ def workerup(
     Starts the worker with host, port, and reload options. Uses
     Uvicorn as ASGI worker. Parameters allow runtime configuration.
     """
+    console.log(
+        "⚠️ This command is deprecated and will be removed in a future version.", style="yellow"
+    )
     require_dependency(
         package_name="arcade_serve",
         command_name="worker",
@@ -712,6 +931,30 @@ def deploy(
         for worker in deployment.worker:
             console.log(f"Deploying '{worker.config.id}...'", style="dim")
             try:
+                # Discover and upload secrets
+                required_secret_keys = worker.get_required_secrets()
+                for secret_key in required_secret_keys:
+                    secret_value = os.getenv(secret_key)
+                    if not secret_value:
+                        console.log(
+                            f"⚠️ Secret '{secret_key}' not found in environment, skipping.",
+                            style="yellow",
+                        )
+                        continue
+                    try:
+                        secret._upsert_secret_to_engine(
+                            engine_url, config.api.key, secret_key, secret_value
+                        )
+                    except Exception as e:
+                        handle_cli_error(
+                            f"Failed to upload secret '{secret_key}'", e, debug, should_exit=False
+                        )
+                    else:
+                        console.log(
+                            f"✅ Secret '{secret_key}' uploaded successfully",
+                            style="dim green",
+                        )
+
                 # Attempt to deploy worker
                 worker.request().execute(cloud_client, engine_client)
                 console.log(
@@ -792,7 +1035,10 @@ def dashboard(
 )
 def docs(
     toolkit_name: str = typer.Option(
-        ..., "--toolkit-name", "-n", help="The name of the toolkit to generate documentation for."
+        ...,
+        "--toolkit-name",
+        "-n",
+        help="The name of the toolkit to generate documentation for.",
     ),
     toolkit_dir: str = typer.Option(
         ...,
@@ -897,7 +1143,10 @@ def docs(
 )
 def generate_toolkit_docs_command(
     toolkit_name: str = typer.Option(
-        ..., "--toolkit-name", "-n", help="The name of the toolkit to generate documentation for."
+        ...,
+        "--toolkit-name",
+        "-n",
+        help="The name of the toolkit to generate documentation for.",
     ),
     toolkit_dir: str = typer.Option(
         ...,
@@ -975,14 +1224,14 @@ def main_callback(
         help="Print version and exit.",
     ),
 ) -> None:
-    excluded_commands = {
+    # Commands that do not require a logged in user
+    public_commands = {
         login.__name__,
         logout.__name__,
-        serve.__name__,
-        workerup.__name__,
         dashboard.__name__,
+        local_evals.__name__,
     }
-    if ctx.invoked_subcommand in excluded_commands:
+    if ctx.invoked_subcommand in public_commands:
         return
 
     if not check_existing_login(suppress_message=True):

@@ -2,7 +2,7 @@
 .PHONY: install
 install: ## Install the uv environment and all packages with dependencies
 	@echo "🚀 Creating virtual environment and installing all packages using uv workspace"
-	@uv sync --active --dev --extra all
+	@uv sync --dev --extra all
 	@uv run pre-commit install
 	@echo "✅ All packages and dependencies installed via uv workspace"
 
@@ -41,11 +41,11 @@ install-toolkits: ## Install dependencies for all toolkits
 check: ## Run code quality tools.
 	@echo "🚀 Linting code: Running pre-commit"
 	@uv run pre-commit run -a
-	@echo "🚀 Static type checking: Running mypy on libs"
+		@echo "🚀 Static type checking: Running mypy on libs"
 	@for lib in libs/arcade*/ ; do \
-		echo "🔍 Type checking $$lib"; \
-		(cd $$lib && uv run mypy . || true); \
-	done
+			echo "🔍 Type checking $$lib"; \
+			(cd $$lib && uv run mypy . --exclude tests || true); \
+		done
 
 .PHONY: check-libs
 check-libs: ## Run code quality tools for each lib package
@@ -62,16 +62,16 @@ check-toolkits: ## Run code quality tools for each toolkit that has a Makefile
 	@for dir in toolkits/*/ ; do \
 		if [ -f "$$dir/Makefile" ]; then \
 			echo "🛠️ Checking toolkit $$dir"; \
-			(cd "$$dir" && uv run --active pre-commit run -a && uv run --active mypy --config-file=pyproject.toml); \
+						(cd "$$dir" && uv run pre-commit run -a && uv run mypy --config-file=pyproject.toml); \
 		else \
 			echo "🛠️ Skipping toolkit $$dir (no Makefile found)"; \
 		fi; \
-	done
+		done
 
 .PHONY: test
 test: ## Test the code with pytest
 	@echo "🚀 Testing libs: Running pytest"
-	@uv run pytest -W ignore -v --cov=libs/tests --cov-config=pyproject.toml --cov-report=xml
+	@uv run pytest -W ignore -v libs/tests --cov=libs --cov-config=pyproject.toml --cov-report=xml
 
 .PHONY: test-libs
 test-libs: ## Test each lib package individually
@@ -87,7 +87,7 @@ test-toolkits: ## Iterate over all toolkits and run pytest on each one
 	@for dir in toolkits/*/ ; do \
 		toolkit_name=$$(basename "$$dir"); \
 		echo "🧪 Testing $$toolkit_name toolkit"; \
-		(cd $$dir && uv run --active pytest -W ignore -v --cov=arcade_$$toolkit_name --cov-report=xml || exit 1); \
+		(cd $$dir && uv run pytest -W ignore -v --cov=arcade_$$toolkit_name --cov-report=xml || exit 1); \
 	done
 
 .PHONY: coverage
@@ -224,7 +224,9 @@ clean-dist: ## Clean all built distributions
 	done
 
 .PHONY: setup
-setup: install ## Complete development setup (same as install)
+setup: ## Run uv environment setup script
+	@chmod +x ./uv_setup.sh
+	@./uv_setup.sh
 
 .PHONY: lint
 lint: check ## Alias for check command
@@ -238,3 +240,12 @@ help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 .DEFAULT_GOAL := help
+
+.PHONY: shell
+shell: ## Open an interactive shell with the virtual environment activated
+	@if [ -f ".venv/bin/activate" ]; then \
+		. .venv/bin/activate && exec $$SHELL -l; \
+	else \
+		echo "⚠️  Virtual environment not found. Run 'make setup' first."; \
+		exit 1; \
+	fi
