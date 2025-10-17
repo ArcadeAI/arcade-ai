@@ -66,7 +66,7 @@ TOOL_SPEC = """## {tool_fully_qualified_name}
 
 TOOL_SPEC_SECRETS = """**Secrets**
 
-This tool requires the following secrets: {secrets} (learn how to [configure secrets](/home/build-tools/create-a-tool-with-secrets#set-the-secret-in-the-arcade-dashboard))
+This tool requires the following secrets: {secrets} (learn how to [configure secrets](/home/build-tools/create-a-tool-with-secrets))
 """
 
 TABBED_EXAMPLES_LIST = """<TabbedCodeBlock
@@ -104,7 +104,10 @@ const USER_ID = "{{arcade_user_id}}";
 const TOOL_NAME = "{tool_fully_qualified_name}";
 
 // Start the authorization process
-const authResponse = await client.tools.authorize({{tool_name: TOOL_NAME}});
+const authResponse = await client.tools.authorize({{
+  tool_name: TOOL_NAME,
+  user_id: USER_ID,
+}});
 
 if (authResponse.status !== "completed") {{
   console.log(`Click this link to authorize: ${{authResponse.url}}`);
@@ -160,7 +163,7 @@ Below is a reference of enumerations used by some of the tools in the {toolkit_n
 {enum_items}
 """
 
-ENUM_ITEM = """## {enum_name}
+ENUM_ITEM = """### {enum_name}
 
 {enum_values}
 """
